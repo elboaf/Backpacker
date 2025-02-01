@@ -41,6 +41,7 @@ local CHAIN_HEAL_RANKS = {
 local CHAIN_HEAL_SPELL = "Chain Heal(Rank 3)";      -- Default Chain Heal rank
 local HEALTH_THRESHOLD = 90;                        -- Heal if health is below this percentage (e.g., 90%)
 local STRATHOLME_MODE = false;                      -- Enable/disable Stratholme mode (disables Mana Spring Totem, enables Disease Cleansing Totem)
+local ZG_MODE = false;                              -- Enable/disable Zul'Gurub mode (disables Mana Spring Totem, enables Poison Cleansing Totem)
 
 -- Function to count the number of entries in a table
 local function TableLength(table)
@@ -88,7 +89,7 @@ end
 
 -- Function to drop totems based on missing buffs
 local function DropTotems()
-    if not STRATHOLME_MODE then
+    if not STRATHOLME_MODE and not ZG_MODE then
         -- Normal totem dropping behavior
         if not buffed("Mana Spring", 'player') then
             CastSpellByName("Mana Spring Totem");
@@ -108,7 +109,7 @@ local function DropTotems()
         else
             PrintMessage("All totems and buffs are active.");
         end
-    else
+    elseif STRATHOLME_MODE then
         -- Stratholme mode: Disable Mana Spring Totem and drop Disease Cleansing Totem last
         if not buffed("Water Shield", 'player') then
             CastSpellByName("Water Shield");
@@ -126,6 +127,25 @@ local function DropTotems()
             -- Drop Disease Cleansing Totem last (cannot be detected as a buff)
             CastSpellByName("Disease Cleansing Totem");
             PrintMessage("Casting Disease Cleansing Totem.");
+        end
+    elseif ZG_MODE then
+        -- Zul'Gurub mode: Disable Mana Spring Totem and drop Poison Cleansing Totem last
+        if not buffed("Water Shield", 'player') then
+            CastSpellByName("Water Shield");
+            PrintMessage("Casting Water Shield.");
+        elseif not buffed("Strength of Earth", 'player') then
+            CastSpellByName("Strength of Earth Totem");
+            PrintMessage("Casting Strength of Earth Totem.");
+        elseif not buffed("Windfury Totem", 'player') then
+            CastSpellByName("Windfury Totem");
+            PrintMessage("Casting Windfury Totem.");
+        elseif not buffed("Flametongue Totem", 'player') then
+            CastSpellByName("Flametongue Totem");
+            PrintMessage("Casting Flametongue Totem.");
+        else
+            -- Drop Poison Cleansing Totem last (cannot be detected as a buff)
+            CastSpellByName("Poison Cleansing Totem");
+            PrintMessage("Casting Poison Cleansing Totem.");
         end
     end
 end
@@ -255,11 +275,31 @@ end
 
 -- Function to toggle Stratholme mode
 local function ToggleStratholmeMode()
+    if ZG_MODE then
+        ZG_MODE = false;  -- Disable Zul'Gurub mode if it's enabled
+        DEFAULT_CHAT_FRAME:AddMessage("Backpacker: Zul'Gurub mode disabled.");
+    end
+
     STRATHOLME_MODE = not STRATHOLME_MODE;  -- Toggle Stratholme mode
     if STRATHOLME_MODE then
         DEFAULT_CHAT_FRAME:AddMessage("Backpacker: Stratholme mode enabled. Mana Spring Totem disabled, Disease Cleansing Totem enabled.");
     else
         DEFAULT_CHAT_FRAME:AddMessage("Backpacker: Stratholme mode disabled. Normal totem behavior restored.");
+    end
+end
+
+-- Function to toggle Zul'Gurub mode
+local function ToggleZulGurubMode()
+    if STRATHOLME_MODE then
+        STRATHOLME_MODE = false;  -- Disable Stratholme mode if it's enabled
+        DEFAULT_CHAT_FRAME:AddMessage("Backpacker: Stratholme mode disabled.");
+    end
+
+    ZG_MODE = not ZG_MODE;  -- Toggle Zul'Gurub mode
+    if ZG_MODE then
+        DEFAULT_CHAT_FRAME:AddMessage("Backpacker: Zul'Gurub mode enabled. Mana Spring Totem disabled, Poison Cleansing Totem enabled.");
+    else
+        DEFAULT_CHAT_FRAME:AddMessage("Backpacker: Zul'Gurub mode disabled. Normal totem behavior restored.");
     end
 end
 
@@ -273,6 +313,7 @@ local function PrintUsage()
     DEFAULT_CHAT_FRAME:AddMessage("  /bpchainheal - Toggle Chain Heal functionality on or off.");
     DEFAULT_CHAT_FRAME:AddMessage("  /bpdr <0, 1, 2> - Set downranking aggressiveness (0 = default, 1 = 150%, 2 = 200%) and Chain Heal rank.");
     DEFAULT_CHAT_FRAME:AddMessage("  /bpstrath - Toggle Stratholme mode (disable Mana Spring Totem, enable Disease Cleansing Totem).");
+    DEFAULT_CHAT_FRAME:AddMessage("  /bpzg - Toggle Zul'Gurub mode (disable Mana Spring Totem, enable Poison Cleansing Totem).");
     DEFAULT_CHAT_FRAME:AddMessage("  /bp or /backpacker - Show this usage information.");
 end
 
@@ -297,6 +338,9 @@ SlashCmdList["BPDR"] = SetDownrankAggressiveness;  -- Link the command to the fu
 
 SLASH_BPSTRATH1 = "/bpstrath";  -- Define the slash command for toggling Stratholme mode
 SlashCmdList["BPSTRATH"] = ToggleStratholmeMode;  -- Link the command to the function
+
+SLASH_BPZG1 = "/bpzg";  -- Define the slash command for toggling Zul'Gurub mode
+SlashCmdList["BPZG"] = ToggleZulGurubMode;  -- Link the command to the function
 
 SLASH_BP1 = "/bp";  -- Define the slash command for usage info
 SLASH_BP2 = "/backpacker";  -- Define the slash command for usage info
