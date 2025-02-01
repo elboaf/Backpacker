@@ -9,10 +9,16 @@ How to Use:
     Enable the addon in the character selection screen (click "AddOns" in the bottom left).
 
 Backpacker: Usage:
-      /bpheal - Heal party members (including yourself).
-      /bpbuff - Drop totems based on missing buffs.
-      /bpdebug - Toggle debug messages on or off.
-      /bpfollow - Toggle follow functionality on or off.
-      /bpchainheal - Toggle Chain Heal functionality on or off.
-      /bpdr <0|1|2> - Set downranking aggressiveness (0 = default, 1 = 150%, 2 = 200%).
-      /bp or /backpacker - Show this usage information.
+/bpheal - Heal party members (including yourself).
+      
+/bpbuff - Drop totems based on missing buffs.
+      
+/bpdebug - Toggle debug messages on or off.
+
+/bpfollow - Toggle follow functionality on or off.
+      
+/bpchainheal - Toggle Chain Heal functionality on or off.
+      
+/bpdr <0|1|2> - Set downranking aggressiveness (0 = default, 1 = 150%, 2 = 200%).
+      
+/bp or /backpacker - Show this usage information.
