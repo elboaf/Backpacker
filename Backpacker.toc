@@ -1,0 +1,7 @@
+## Interface: 11200
+## Title: Backpacker
+## Notes: Automatically heals party members, drops totems, and follows party members.
+## Author: Ler
+## Version: 1.0
+
+Backpacker.lua
