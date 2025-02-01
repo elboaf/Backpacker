@@ -2,6 +2,7 @@
 ## Title: Backpacker
 ## Notes: Automatically heals party members, drops totems, and follows party members.
 ## Author: Ler
-## Version: 1.0
+## Version: 1.1
+## SavedVariables: BackpackerDB
 
 Backpacker.lua

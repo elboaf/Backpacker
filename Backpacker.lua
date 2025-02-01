@@ -1,7 +1,20 @@
 -- Backpacker.lua
 -- Main script for Backpacker addon
 
--- Load configuration file
+-- SavedVariables table
+BackpackerDB = BackpackerDB or {
+    DEBUG_MODE = false,                  -- Debug mode (off by default)
+    DOWNRANK_AGGRESSIVENESS = 0,         -- Downranking aggressiveness (0 = default, 1 = 150%, 2 = 200%)
+    FOLLOW_ENABLED = true,               -- Follow functionality (enabled by default)
+};
+
+-- Load configuration from SavedVariables
+local DEBUG_MODE = BackpackerDB.DEBUG_MODE;
+local DOWNRANK_AGGRESSIVENESS = BackpackerDB.DOWNRANK_AGGRESSIVENESS;
+local FOLLOW_ENABLED = BackpackerDB.FOLLOW_ENABLED;
+local CHAIN_HEAL_ENABLED = true;                  -- Enable/disable Chain Heal functionality
+
+-- Load configuration file for LESSER_HEALING_WAVE_RANKS
 local configLoaded, config = pcall(loadfile, "Interface\\AddOns\\Backpacker\\Backpacker_Config.lua");
 if not configLoaded then
     DEFAULT_CHAT_FRAME:AddMessage("Backpacker: Failed to load configuration file. Using default values.");
@@ -17,13 +30,17 @@ else
     LESSER_HEALING_WAVE_RANKS = config.LESSER_HEALING_WAVE_RANKS;
 end
 
+-- Define ranks for Chain Heal
+local CHAIN_HEAL_RANKS = {
+    { rank = 1, manaCost = 500, healAmount = 800 },  -- Rank 1 (example values, adjust as needed)
+    { rank = 2, manaCost = 400, healAmount = 700 },  -- Rank 2
+    { rank = 3, manaCost = 300, healAmount = 600 },  -- Rank 3
+};
+
 -- Configuration
-local CHAIN_HEAL_SPELL = "Chain Heal";            -- Multi-target heal
-local HEALTH_THRESHOLD = 90;                      -- Heal if health is below this percentage (e.g., 90%)
-local DEBUG_MODE = false;                         -- Enable/disable debug messages (off by default)
-local FOLLOW_ENABLED = true;                      -- Enable/disable follow functionality
-local CHAIN_HEAL_ENABLED = true;                  -- Enable/disable Chain Heal functionality
-local DOWNRANK_AGGRESSIVENESS = 0;                -- Downranking aggressiveness level (0 = default, 1 = 150%, 2 = 200%)
+local CHAIN_HEAL_SPELL = "Chain Heal(Rank 3)";      -- Default Chain Heal rank
+local HEALTH_THRESHOLD = 90;                        -- Heal if health is below this percentage (e.g., 90%)
+local STRATHOLME_MODE = false;                      -- Enable/disable Stratholme mode (disables Mana Spring Totem, enables Disease Cleansing Totem)
 
 -- Function to count the number of entries in a table
 local function TableLength(table)
@@ -71,23 +88,45 @@ end
 
 -- Function to drop totems based on missing buffs
 local function DropTotems()
-    if not buffed("Mana Spring", 'player') then
-        CastSpellByName("Mana Spring Totem");
-        PrintMessage("Casting Mana Spring Totem.");
-    elseif not buffed("Water Shield", 'player') then
-        CastSpellByName("Water Shield");
-        PrintMessage("Casting Water Shield.");
-    elseif not buffed("Strength of Earth", 'player') then
-        CastSpellByName("Strength of Earth Totem");
-        PrintMessage("Casting Strength of Earth Totem.");
-    elseif not buffed("Windfury Totem", 'player') then
-        CastSpellByName("Windfury Totem");
-        PrintMessage("Casting Windfury Totem.");
-    elseif not buffed("Flametongue Totem", 'player') then
-        CastSpellByName("Flametongue Totem");
-        PrintMessage("Casting Flametongue Totem.");
+    if not STRATHOLME_MODE then
+        -- Normal totem dropping behavior
+        if not buffed("Mana Spring", 'player') then
+            CastSpellByName("Mana Spring Totem");
+            PrintMessage("Casting Mana Spring Totem.");
+        elseif not buffed("Water Shield", 'player') then
+            CastSpellByName("Water Shield");
+            PrintMessage("Casting Water Shield.");
+        elseif not buffed("Strength of Earth", 'player') then
+            CastSpellByName("Strength of Earth Totem");
+            PrintMessage("Casting Strength of Earth Totem.");
+        elseif not buffed("Windfury Totem", 'player') then
+            CastSpellByName("Windfury Totem");
+            PrintMessage("Casting Windfury Totem.");
+        elseif not buffed("Flametongue Totem", 'player') then
+            CastSpellByName("Flametongue Totem");
+            PrintMessage("Casting Flametongue Totem.");
+        else
+            PrintMessage("All totems and buffs are active.");
+        end
     else
-        PrintMessage("All totems and buffs are active.");
+        -- Stratholme mode: Disable Mana Spring Totem and drop Disease Cleansing Totem last
+        if not buffed("Water Shield", 'player') then
+            CastSpellByName("Water Shield");
+            PrintMessage("Casting Water Shield.");
+        elseif not buffed("Strength of Earth", 'player') then
+            CastSpellByName("Strength of Earth Totem");
+            PrintMessage("Casting Strength of Earth Totem.");
+        elseif not buffed("Windfury Totem", 'player') then
+            CastSpellByName("Windfury Totem");
+            PrintMessage("Casting Windfury Totem.");
+        elseif not buffed("Flametongue Totem", 'player') then
+            CastSpellByName("Flametongue Totem");
+            PrintMessage("Casting Flametongue Totem.");
+        else
+            -- Drop Disease Cleansing Totem last (cannot be detected as a buff)
+            CastSpellByName("Disease Cleansing Totem");
+            PrintMessage("Casting Disease Cleansing Totem.");
+        end
     end
 end
 
@@ -128,7 +167,7 @@ local function HealPartyMembers()
         -- Cast Chain Heal if 2 or more party members (including player) need healing
         CastSpellByName(CHAIN_HEAL_SPELL);
         SpellTargetUnit(lowHealthMembers[1]);  -- Target the most injured member
-        PrintMessage("Casting Chain Heal on " .. UnitName(lowHealthMembers[1]) .. " (lowest health).");
+        PrintMessage("Casting " .. CHAIN_HEAL_SPELL .. " on " .. UnitName(lowHealthMembers[1]) .. " (lowest health).");
     elseif numLowHealthMembers == 1 then
         -- Cast Lesser Healing Wave if only 1 party member (including player) needs healing
         local target = lowHealthMembers[1];
@@ -160,6 +199,7 @@ end
 -- Function to toggle debug mode
 local function ToggleDebugMode()
     DEBUG_MODE = not DEBUG_MODE;  -- Toggle the debug mode
+    BackpackerDB.DEBUG_MODE = DEBUG_MODE;  -- Save the updated setting
     if DEBUG_MODE then
         DEFAULT_CHAT_FRAME:AddMessage("Backpacker: Debug mode enabled.");
     else
@@ -170,6 +210,7 @@ end
 -- Function to toggle follow functionality
 local function ToggleFollow()
     FOLLOW_ENABLED = not FOLLOW_ENABLED;  -- Toggle the follow functionality
+    BackpackerDB.FOLLOW_ENABLED = FOLLOW_ENABLED;  -- Save the updated setting
     if FOLLOW_ENABLED then
         DEFAULT_CHAT_FRAME:AddMessage("Backpacker: Follow functionality enabled.");
     else
@@ -187,14 +228,38 @@ local function ToggleChainHeal()
     end
 end
 
--- Function to set downranking aggressiveness
+-- Function to set downranking aggressiveness and Chain Heal rank
 local function SetDownrankAggressiveness(level)
     level = tonumber(level);
     if level == 0 or level == 1 or level == 2 then
         DOWNRANK_AGGRESSIVENESS = level;
+        BackpackerDB.DOWNRANK_AGGRESSIVENESS = DOWNRANK_AGGRESSIVENESS;  -- Save the updated setting
+
+        -- Set Chain Heal rank based on downranking aggressiveness
+        if CHAIN_HEAL_ENABLED then
+            if level == 0 then
+                CHAIN_HEAL_SPELL = "Chain Heal(Rank 3)";  -- Default rank
+            elseif level == 1 then
+                CHAIN_HEAL_SPELL = "Chain Heal(Rank 2)";  -- Mid rank
+            elseif level == 2 then
+                CHAIN_HEAL_SPELL = "Chain Heal(Rank 1)";  -- Lowest rank
+            end
+        end
+
         DEFAULT_CHAT_FRAME:AddMessage("Backpacker: Downranking aggressiveness set to " .. level .. ".");
+        DEFAULT_CHAT_FRAME:AddMessage("Backpacker: Chain Heal rank set to " .. CHAIN_HEAL_SPELL .. ".");
     else
         DEFAULT_CHAT_FRAME:AddMessage("Backpacker: Invalid downranking aggressiveness level. Use 0, 1, or 2.");
+    end
+end
+
+-- Function to toggle Stratholme mode
+local function ToggleStratholmeMode()
+    STRATHOLME_MODE = not STRATHOLME_MODE;  -- Toggle Stratholme mode
+    if STRATHOLME_MODE then
+        DEFAULT_CHAT_FRAME:AddMessage("Backpacker: Stratholme mode enabled. Mana Spring Totem disabled, Disease Cleansing Totem enabled.");
+    else
+        DEFAULT_CHAT_FRAME:AddMessage("Backpacker: Stratholme mode disabled. Normal totem behavior restored.");
     end
 end
 
@@ -206,7 +271,8 @@ local function PrintUsage()
     DEFAULT_CHAT_FRAME:AddMessage("  /bpdebug - Toggle debug messages on or off.");
     DEFAULT_CHAT_FRAME:AddMessage("  /bpfollow - Toggle follow functionality on or off.");
     DEFAULT_CHAT_FRAME:AddMessage("  /bpchainheal - Toggle Chain Heal functionality on or off.");
-    DEFAULT_CHAT_FRAME:AddMessage("  /bpdr <0, 1, 2> - Set downranking aggressiveness (0 = default, 1 = 150%, 2 = 200%).");
+    DEFAULT_CHAT_FRAME:AddMessage("  /bpdr <0, 1, 2> - Set downranking aggressiveness (0 = default, 1 = 150%, 2 = 200%) and Chain Heal rank.");
+    DEFAULT_CHAT_FRAME:AddMessage("  /bpstrath - Toggle Stratholme mode (disable Mana Spring Totem, enable Disease Cleansing Totem).");
     DEFAULT_CHAT_FRAME:AddMessage("  /bp or /backpacker - Show this usage information.");
 end
 
@@ -228,6 +294,9 @@ SlashCmdList["BPCHAINHEAL"] = ToggleChainHeal;  -- Link the command to the funct
 
 SLASH_BPDR1 = "/bpdr";  -- Define the slash command for setting downranking aggressiveness
 SlashCmdList["BPDR"] = SetDownrankAggressiveness;  -- Link the command to the function
+
+SLASH_BPSTRATH1 = "/bpstrath";  -- Define the slash command for toggling Stratholme mode
+SlashCmdList["BPSTRATH"] = ToggleStratholmeMode;  -- Link the command to the function
 
 SLASH_BP1 = "/bp";  -- Define the slash command for usage info
 SLASH_BP2 = "/backpacker";  -- Define the slash command for usage info
