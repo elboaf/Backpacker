@@ -9,6 +9,7 @@ How to Use:
     Enable the addon in the character selection screen (click "AddOns" in the bottom left).
 
 Backpacker: Usage:
+
 /bpheal - Heal party members (including yourself).
       
 /bpbuff - Drop totems based on missing buffs.
