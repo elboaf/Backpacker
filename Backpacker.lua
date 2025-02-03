@@ -120,11 +120,22 @@ local function HealPartyMembers()
         end
     end
 
+    -- Check player health
     CheckHealth("player");
+
+    -- Check party members
     for i = 1, GetNumPartyMembers() do
         CheckHealth("party" .. i);
     end
 
+    -- Check raid members (if in a raid)
+    if GetNumRaidMembers() > 0 then
+        for i = 1, GetNumRaidMembers() do
+            CheckHealth("raid" .. i);
+        end
+    end
+
+    -- Sort low-health members by health percentage (lowest first)
     table.sort(lowHealthMembers, SortByHealth);
 
     local numLowHealthMembers = TableLength(lowHealthMembers);
@@ -139,7 +150,7 @@ local function HealPartyMembers()
         SpellTargetUnit(lowHealthMembers[1]);
         PrintMessage("Casting " .. spellToCast .. " on " .. UnitName(lowHealthMembers[1]) .. ".");
     else
-        PrintMessage("No party members require healing.");
+        PrintMessage("No party or raid members require healing.");
         if settings.FOLLOW_ENABLED and GetNumPartyMembers() > 0 then
             FollowUnit("party1");
             PrintMessage("Following " .. UnitName("party1") .. ".");
@@ -187,7 +198,7 @@ end
 
 local function PrintUsage()
     DEFAULT_CHAT_FRAME:AddMessage("Backpacker: Usage:");
-    DEFAULT_CHAT_FRAME:AddMessage("  /bpheal - Heal party members.");
+    DEFAULT_CHAT_FRAME:AddMessage("  /bpheal - Heal party and raid members.");
     DEFAULT_CHAT_FRAME:AddMessage("  /bpbuff - Drop totems.");
     DEFAULT_CHAT_FRAME:AddMessage("  /bpdebug - Toggle debug messages.");
     DEFAULT_CHAT_FRAME:AddMessage("  /bpfollow - Toggle follow functionality.");
