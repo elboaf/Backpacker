@@ -4,7 +4,6 @@ I use this addon by creating a macro for /bpheal bound to mouse wheel up, and a 
 
 How to Use:
     Place the Backpacker folder in your Interface/AddOns/ directory.
-    Edit the Backpacker_Config.lua file with the desired Lesser Healing Wave ranks and values. These values are used in determining which rank of lesser healing wave to cast.
     Log in to Turtle WoW.
     Enable the addon in the character selection screen (click "AddOns" in the bottom left).
 
