@@ -91,11 +91,11 @@ local function DropTotems()
 
     -- Add Mana Spring Totem or cleansing totem based on mode
     if settings.STRATHOLME_MODE then
-        table.insert(totems, 1, { buff = nil, spell = "Disease Cleansing Totem" });
+        table.insert(totems, { buff = nil, spell = "Disease Cleansing Totem" });
     elseif settings.ZG_MODE then
-        table.insert(totems, 1, { buff = nil, spell = "Poison Cleansing Totem" });
+        table.insert(totems, { buff = nil, spell = "Poison Cleansing Totem" });
     else
-        table.insert(totems, 1, { buff = "Mana Spring", spell = "Mana Spring Totem" });
+        table.insert(totems, { buff = "Mana Spring", spell = "Mana Spring Totem" });
     end
 
     -- Drop totems based on missing buffs
