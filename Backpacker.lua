@@ -4,10 +4,10 @@
 -- SavedVariables table
 BackpackerDB = BackpackerDB or {
     DEBUG_MODE = false,                  -- Debug mode (off by default)
-    DOWNRANK_AGGRESSIVENESS = 0,         -- Downranking aggressiveness (0 = default, 1 = 150%, 2 = 200%)
+    DOWNRANK_AGGRESSIVENESS = 2,         -- Downranking aggressiveness (2 = 200% by default)
     FOLLOW_ENABLED = true,               -- Follow functionality (enabled by default)
     CHAIN_HEAL_ENABLED = true,           -- Chain Heal functionality (enabled by default)
-    CHAIN_HEAL_SPELL = "Chain Heal(Rank 3)",  -- Default Chain Heal rank
+    CHAIN_HEAL_SPELL = "Chain Heal(Rank 1)",  -- Default Chain Heal rank (updated to Rank 1 for downranking level 2)
     HEALTH_THRESHOLD = 90,               -- Heal if health is below this percentage (e.g., 90%)
     STRATHOLME_MODE = false,             -- Stratholme mode (disabled by default)
     ZG_MODE = false,                     -- Zul'Gurub mode (disabled by default)
@@ -56,6 +56,7 @@ local function Backpacker_OnEvent(event, arg1)
         -- Print a message to confirm the addon has loaded
         DEFAULT_CHAT_FRAME:AddMessage("Backpacker: Addon loaded. Settings initialized.");
         DEFAULT_CHAT_FRAME:AddMessage("Backpacker: DEBUG_MODE = " .. tostring(Backpacker_DEBUG_MODE));
+        DEFAULT_CHAT_FRAME:AddMessage("Backpacker: DOWNRANK_AGGRESSIVENESS = " .. Backpacker_DOWNRANK_AGGRESSIVENESS);
         DEFAULT_CHAT_FRAME:AddMessage("Backpacker: FOLLOW_ENABLED = " .. tostring(Backpacker_FOLLOW_ENABLED));
     end
 end
@@ -64,12 +65,6 @@ end
 local f = CreateFrame("Frame");
 f:RegisterEvent("ADDON_LOADED");
 f:SetScript("OnEvent", Backpacker_OnEvent);
-
--- Configuration
-local Backpacker_CHAIN_HEAL_SPELL = "Chain Heal(Rank 3)";      -- Default Chain Heal rank
-local Backpacker_HEALTH_THRESHOLD = 90;                        -- Heal if health is below this percentage (e.g., 90%)
-local Backpacker_STRATHOLME_MODE = false;                      -- Enable/disable Stratholme mode (disables Mana Spring Totem, enables Disease Cleansing Totem)
-local Backpacker_ZG_MODE = false;                              -- Enable/disable Zul'Gurub mode (disables Mana Spring Totem, enables Poison Cleansing Totem)
 
 -- Function to count the number of entries in a table
 local function Backpacker_TableLength(table)
@@ -342,7 +337,7 @@ local function Backpacker_PrintUsage()
     DEFAULT_CHAT_FRAME:AddMessage("  /bpdebug - Toggle debug messages on or off.");
     DEFAULT_CHAT_FRAME:AddMessage("  /bpfollow - Toggle follow functionality on or off.");
     DEFAULT_CHAT_FRAME:AddMessage("  /bpchainheal - Toggle Chain Heal functionality on or off.");
-    DEFAULT_CHAT_FRAME:AddMessage("  /bpdr <0, 1, 2> - Set downranking aggressiveness (0 = default, 1 = 150%, 2 = 200%) and Chain Heal rank.");
+    DEFAULT_CHAT_FRAME:AddMessage("  /bpdr <0, 1, 2> - Set downranking aggressiveness (default: 2 = 200%).");
     DEFAULT_CHAT_FRAME:AddMessage("  /bpstrath - Toggle Stratholme mode (disable Mana Spring Totem, enable Disease Cleansing Totem).");
     DEFAULT_CHAT_FRAME:AddMessage("  /bpzg - Toggle Zul'Gurub mode (disable Mana Spring Totem, enable Poison Cleansing Totem).");
     DEFAULT_CHAT_FRAME:AddMessage("  /bp or /backpacker - Show this usage information.");
