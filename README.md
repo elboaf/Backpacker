@@ -20,7 +20,7 @@ Backpacker: Usage:
       
 /bpchainheal - Toggle Chain Heal functionality on or off.
       
-/bpdr <0|1|2> - Set downranking aggressiveness (0 = default, 1 = 150%, 2 = 200%).
+/bpdr <0|1|2> - Set downranking aggressiveness (0 = 100%, 1 = 150%, 2 = 200% (default)).
       
 /bp or /backpacker - Show this usage information.
 
