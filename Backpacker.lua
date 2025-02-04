@@ -128,7 +128,7 @@ local function HealPartyMembers()
     CheckHealth("player");
 
     -- Check party or raid members
-    if IsInRaid() then
+    if UnitInRaid(player) then
         -- In a raid group, only check raid members
         for i = 1, GetNumRaidMembers() do
             CheckHealth("raid" .. i);
