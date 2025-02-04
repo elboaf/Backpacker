@@ -114,41 +114,54 @@ local function HealPartyMembers()
     local lowHealthMembers = {};
 
     local function CheckHealth(unit)
-        local healthPercent = (UnitHealth(unit) / UnitHealthMax(unit)) * 100;
-        if healthPercent < settings.HEALTH_THRESHOLD and not UnitIsDeadOrGhost(unit) and UnitIsConnected(unit) then
-            table.insert(lowHealthMembers, unit);
+        if UnitExists(unit) and not UnitIsDeadOrGhost(unit) and UnitIsConnected(unit) then
+            local healthPercent = (UnitHealth(unit) / UnitHealthMax(unit)) * 100;
+            PrintMessage("Checking health of " .. UnitName(unit) .. ": " .. healthPercent .. "%");
+            if healthPercent < settings.HEALTH_THRESHOLD then
+                table.insert(lowHealthMembers, unit);
+                PrintMessage(UnitName(unit) .. " added to low-health list.");
+            end
         end
     end
 
     -- Check player health
     CheckHealth("player");
 
-    -- Check party members
-    for i = 1, GetNumPartyMembers() do
-        CheckHealth("party" .. i);
-    end
-
-    -- Check raid members (if in a raid)
-    if GetNumRaidMembers() > 0 then
+    -- Check party or raid members
+    if IsInRaid() then
+        -- In a raid group, only check raid members
         for i = 1, GetNumRaidMembers() do
             CheckHealth("raid" .. i);
+        end
+    else
+        -- In a party, check party members
+        for i = 1, GetNumPartyMembers() do
+            CheckHealth("party" .. i);
         end
     end
 
     -- Sort low-health members by health percentage (lowest first)
     table.sort(lowHealthMembers, SortByHealth);
 
+    -- Debug: Print low-health members
+    PrintMessage("Low-health members: " .. TableLength(lowHealthMembers));
+    for i, unit in ipairs(lowHealthMembers) do
+        PrintMessage(i .. ": " .. UnitName(unit) .. " (" .. ((UnitHealth(unit) / UnitHealthMax(unit)) * 100) .. "%)");
+    end
+
     local numLowHealthMembers = TableLength(lowHealthMembers);
 
     if numLowHealthMembers >= 2 and settings.CHAIN_HEAL_ENABLED then
+        -- Cast Chain Heal if enabled and at least 2 members are low on health
         CastSpellByName(settings.CHAIN_HEAL_SPELL);
         SpellTargetUnit(lowHealthMembers[1]);
         PrintMessage("Casting " .. settings.CHAIN_HEAL_SPELL .. " on " .. UnitName(lowHealthMembers[1]) .. ".");
-    elseif numLowHealthMembers == 1 then
+    elseif numLowHealthMembers >= 1 then
+        -- Cast Lesser Healing Wave if at least 1 member is low on health
         local spellToCast = SelectHealingSpellRank(UnitHealthMax(lowHealthMembers[1]) - UnitHealth(lowHealthMembers[1]));
         CastSpellByName(spellToCast);
+        PrintMessage("Attempting to cast " .. spellToCast .. " on " .. UnitName(lowHealthMembers[1]) .. ".");
         SpellTargetUnit(lowHealthMembers[1]);
-        PrintMessage("Casting " .. spellToCast .. " on " .. UnitName(lowHealthMembers[1]) .. ".");
     else
         PrintMessage("No party or raid members require healing.");
         if settings.FOLLOW_ENABLED and GetNumPartyMembers() > 0 then
