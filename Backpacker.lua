@@ -11,6 +11,7 @@ BackpackerDB = BackpackerDB or {
     HEALTH_THRESHOLD = 90,
     STRATHOLME_MODE = false,
     ZG_MODE = false,
+    HYBRID_MODE = false,  -- New hybrid mode
 };
 
 -- Local variables to store settings
@@ -23,6 +24,7 @@ local settings = {
     HEALTH_THRESHOLD = BackpackerDB.HEALTH_THRESHOLD,
     STRATHOLME_MODE = BackpackerDB.STRATHOLME_MODE,
     ZG_MODE = BackpackerDB.ZG_MODE,
+    HYBRID_MODE = BackpackerDB.HYBRID_MODE,  -- New hybrid mode
 };
 
 -- Spell configurations
@@ -164,6 +166,28 @@ local function HealPartyMembers()
         SpellTargetUnit(lowHealthMembers[1]);
     else
         PrintMessage("No party or raid members require healing.");
+        if settings.HYBRID_MODE then
+            -- In hybrid mode, assist party member by casting Lightning Bolt at their target
+            local partyMember = "party1";
+            if UnitExists(partyMember) and not UnitIsDeadOrGhost(partyMember) and UnitIsConnected(partyMember) then
+                local target = UnitName(partyMember .. "target");
+                --if target and UnitCanAttack("player", target) then
+                if target then
+                    --FollowUnit("party1");
+                    AssistUnit("party1");
+                    CastSpellByName("Chain Lightning");
+                    CastSpellByName("Fire Nova Totem");
+                    CastSpellByName("Lightning Bolt");
+                    --SpellTargetUnit(target);
+                    PrintMessage("Casting Lightning Bolt at " .. target .. ".");
+                else
+                    PrintMessage("No valid target for Lightning Bolt.");
+                    FollowUnit("party1");
+                end
+            else
+                PrintMessage("No valid party member to assist.");
+            end
+        end
         if settings.FOLLOW_ENABLED and GetNumPartyMembers() > 0 then
             FollowUnit("party1");
             PrintMessage("Following " .. UnitName("party1") .. ".");
@@ -209,6 +233,20 @@ local function ToggleZulGurubMode()
     ToggleSetting("ZG_MODE", "Zul'Gurub mode");
 end
 
+-- New function to toggle hybrid mode
+local function ToggleHybridMode()
+    ToggleSetting("HYBRID_MODE", "Hybrid mode");
+    if settings.HYBRID_MODE then
+        settings.HEALTH_THRESHOLD = 80;
+        BackpackerDB.HEALTH_THRESHOLD = 80;
+        DEFAULT_CHAT_FRAME:AddMessage("Backpacker: Healing threshold set to 80% for hybrid mode.");
+    else
+        settings.HEALTH_THRESHOLD = 90;
+        BackpackerDB.HEALTH_THRESHOLD = 90;
+        DEFAULT_CHAT_FRAME:AddMessage("Backpacker: Healing threshold reset to 90%.");
+    end
+end
+
 local function PrintUsage()
     DEFAULT_CHAT_FRAME:AddMessage("Backpacker: Usage:");
     DEFAULT_CHAT_FRAME:AddMessage("  /bpheal - Heal party and raid members.");
@@ -219,6 +257,7 @@ local function PrintUsage()
     DEFAULT_CHAT_FRAME:AddMessage("  /bpdr <0, 1, 2> - Set downranking aggressiveness.");
     DEFAULT_CHAT_FRAME:AddMessage("  /bpstrath - Toggle Stratholme mode.");
     DEFAULT_CHAT_FRAME:AddMessage("  /bpzg - Toggle Zul'Gurub mode.");
+    DEFAULT_CHAT_FRAME:AddMessage("  /bphybrid - Toggle Hybrid mode.");  -- New hybrid mode command
     DEFAULT_CHAT_FRAME:AddMessage("  /bp or /backpacker - Show usage information.");
 end
 
@@ -231,6 +270,7 @@ SLASH_BPCHAINHEAL1 = "/bpchainheal"; SlashCmdList["BPCHAINHEAL"] = function() To
 SLASH_BPDR1 = "/bpdr"; SlashCmdList["BPDR"] = SetDownrankAggressiveness;
 SLASH_BPSTRATH1 = "/bpstrath"; SlashCmdList["BPSTRATH"] = ToggleStratholmeMode;
 SLASH_BPZG1 = "/bpzg"; SlashCmdList["BPZG"] = ToggleZulGurubMode;
+SLASH_BPHYBRID1 = "/bphybrid"; SlashCmdList["BPHYBRID"] = ToggleHybridMode;  -- New hybrid mode command
 SLASH_BP1 = "/bp"; SLASH_BP2 = "/backpacker"; SlashCmdList["BP"] = PrintUsage;
 
 -- Initialize
