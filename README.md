@@ -2,6 +2,8 @@ This addon was created for backpacking my Shaman in TurtleWow CC2. It assumes yo
 
 I use this addon by creating a macro for /bpheal bound to mouse wheel up, and a macro for /bpbuff bound to mousewheel down. This way I can have my Warrior window focused and controlled using my keyboard, and my Shamans healing/buffing is controlled by mousing over his window in the background and scroling up/down
 
+[![Video](https://img.youtube.com/vi/68p6u27n1M0/0.jpg)](https://youtu.be/68p6u27n1M0)
+
 How to Use:
     Place the Backpacker folder in your Interface/AddOns/ directory.
     Log in to Turtle WoW.
