@@ -8,20 +8,54 @@ How to Use:
     Enable the addon in the character selection screen (click "AddOns" in the bottom left).
 
 Backpacker: Usage:
+Explanation of Commands:
 
-/bpheal - Heal party members (including yourself).
-      
-/bpbuff - Drop totems based on missing buffs.
-      
-/bpdebug - Toggle debug messages on or off.
+    /bpheal
 
-/bpfollow - Toggle follow functionality on or off.
-      
-/bpchainheal - Toggle Chain Heal functionality on or off.
-      
-/bpdr <0|1|2> - Set downranking aggressiveness (0 = 100%, 1 = 150%, 2 = 200% (default)).
-      
-/bp or /backpacker - Show this usage information.
+        Heals party and raid members based on their health and the addon's settings.
+
+    /bpbuff
+
+        Drops totems based on the current mode (Stratholme, Zul'Gurub, or default).
+
+    /bpdebug
+
+        Toggles debug messages on or off. When enabled, the addon will print additional information to the chat frame.
+
+    /bpfollow
+
+        Toggles the follow functionality. When enabled, the player will automatically follow the first party member.
+
+    /bpchainheal
+
+        Toggles the Chain Heal functionality. When enabled, the addon will use Chain Heal if multiple party members are low on health.
+
+    /bpdr <0, 1, 2>
+
+        Sets the downranking aggressiveness for healing spells.
+
+            0: Least aggressive downranking.
+
+            1: Moderate downranking.
+
+            2: Most aggressive downranking.
+
+    /bpstrath
+
+        Toggles Stratholme mode. When enabled, the addon will drop a Disease Cleansing Totem instead of a Mana Spring Totem.
+
+    /bpzg
+
+        Toggles Zul'Gurub mode. When enabled, the addon will drop a Poison Cleansing Totem instead of a Mana Spring Totem.
+
+    /bphybrid
+
+        Toggles Hybrid mode. When enabled, the addon will lower the health threshold for healing and allow the player to assist party members by casting offensive spells like Lightning Bolt.
+
+    /bp or /backpacker
+
+        Displays this usage information in the chat frame.
+
 
 
 The provided files are part of a World of Warcraft (WoW) addon called Backpacker. This addon is designed to assist players, particularly those playing as Shamans, by automating certain tasks such as healing party members, dropping totems, and following party members. Below is a breakdown of the files and their functionalities:
