@@ -129,14 +129,15 @@ local function HealPartyMembers()
     -- Check player health
     CheckHealth("player");
 
-    -- Check party or raid members
-    if UnitInRaid(player) then
-        -- In a raid group, only check raid members
-        for i = 1, GetNumRaidMembers() do
+    -- Check if in a raid
+    local numRaidMembers = GetNumRaidMembers();
+    if numRaidMembers > 0 then
+        -- Player is in a raid, check all raid members
+        for i = 1, numRaidMembers do
             CheckHealth("raid" .. i);
         end
     else
-        -- In a party, check party members
+        -- Player is not in a raid, check party members
         for i = 1, GetNumPartyMembers() do
             CheckHealth("party" .. i);
         end
@@ -148,7 +149,7 @@ local function HealPartyMembers()
     -- Debug: Print low-health members
     PrintMessage("Low-health members: " .. TableLength(lowHealthMembers));
     for i, unit in ipairs(lowHealthMembers) do
-        PrintMessage(i .. ": " .. UnitName(unit) .. " (" .. ((UnitHealth(unit) / UnitHealthMax(unit)) * 100) .. "%)");
+        PrintMessage(i .. ": " .. UnitName(unit) .. " (" .. ((UnitHealth(unit) / UnitHealthMax(unit)) * 100 .. "%)"));
     end
 
     local numLowHealthMembers = TableLength(lowHealthMembers);
@@ -171,14 +172,11 @@ local function HealPartyMembers()
             local partyMember = "party1";
             if UnitExists(partyMember) and not UnitIsDeadOrGhost(partyMember) and UnitIsConnected(partyMember) then
                 local target = UnitName(partyMember .. "target");
-                --if target and UnitCanAttack("player", target) then
                 if target then
-                    --FollowUnit("party1");
                     AssistUnit("party1");
                     CastSpellByName("Chain Lightning");
                     CastSpellByName("Fire Nova Totem");
                     CastSpellByName("Lightning Bolt");
-                    --SpellTargetUnit(target);
                     PrintMessage("Casting Lightning Bolt at " .. target .. ".");
                 else
                     PrintMessage("No valid target for Lightning Bolt.");
