@@ -4,7 +4,7 @@
 -- SavedVariables table
 BackpackerDB = BackpackerDB or {
     DEBUG_MODE = false,
-    DOWNRANK_AGGRESSIVENESS = 2,
+    DOWNRANK_AGGRESSIVENESS = 0,
     FOLLOW_ENABLED = true,
     CHAIN_HEAL_ENABLED = true,
     CHAIN_HEAL_SPELL = "Chain Heal(Rank 1)",
@@ -43,12 +43,19 @@ local CHAIN_HEAL_RANKS = {
     { rank = 3, manaCost = 300, healAmount = 600 },
 };
 
+-- Cooldown variables for totem logic
+local lastTotemRecallTime = 0;
+local lastAllTotemsActiveTime = 0;
+local TOTEM_RECALL_COOLDOWN = 3; -- seconds
+local TOTEM_RECALL_ACTIVATION_COOLDOWN = 2; -- seconds
+
 -- Event handler
 local function OnEvent(event, arg1)
     if event == "ADDON_LOADED" and arg1 == "Backpacker" then
         for k, v in pairs(BackpackerDB) do
             settings[k] = v;
         end
+        InitializeChainHealSpell();  -- Initialize chain heal based on available spells
         DEFAULT_CHAT_FRAME:AddMessage("Backpacker: Addon loaded. Settings initialized.");
     end
 end
@@ -72,18 +79,86 @@ local function SortByHealth(a, b)
     return (UnitHealth(a) / UnitHealthMax(a)) < (UnitHealth(b) / UnitHealthMax(b));
 end
 
-local function SelectHealingSpellRank(missingHealth)
-    for _, rankInfo in ipairs(LESSER_HEALING_WAVE_RANKS) do
-        local adjustedHealAmount = rankInfo.healAmount * (1 + settings.DOWNRANK_AGGRESSIVENESS);
-        if missingHealth <= adjustedHealAmount then
-            return "Lesser Healing Wave(Rank " .. rankInfo.rank .. ")";
+-- Utility function to check if a spell is available (Lua 5.0 compatible)
+local function IsSpellKnown(spellName)
+    local name, rank;
+    for i = 1, 200 do  -- Check a large range of spell slots
+        name, rank = GetSpellName(i, BOOKTYPE_SPELL);
+        if name then
+            local fullSpellName = name;
+            if rank and rank ~= "" then
+                fullSpellName = name .. "(Rank " .. rank .. ")";
+            end
+            if fullSpellName == spellName then
+                return true;
+            end
+        else
+            break;
         end
     end
-    return "Lesser Healing Wave(Rank " .. LESSER_HEALING_WAVE_RANKS[TableLength(LESSER_HEALING_WAVE_RANKS)].rank .. ")";
+    return false;
+end
+
+-- Update the Chain Heal selection in the settings initialization
+local function InitializeChainHealSpell()
+    -- Check available chain heal ranks from highest to lowest
+    for i = table.getn(CHAIN_HEAL_RANKS), 1, -1 do
+        local rankInfo = CHAIN_HEAL_RANKS[i];
+        local spellName = "Chain Heal(Rank " .. rankInfo.rank .. ")";
+        
+        if IsSpellKnown(spellName) then
+            settings.CHAIN_HEAL_SPELL = spellName;
+            BackpackerDB.CHAIN_HEAL_SPELL = spellName;
+            return;
+        end
+    end
+    
+    -- Fallback
+    settings.CHAIN_HEAL_SPELL = "Chain Heal(Rank 1)";
+    BackpackerDB.CHAIN_HEAL_SPELL = "Chain Heal(Rank 1)";
+end
+
+-- Updated function to select healing spell rank based on available spells
+local function SelectHealingSpellRank(missingHealth)
+    -- Check available ranks from highest to lowest
+    for i = table.getn(LESSER_HEALING_WAVE_RANKS), 1, -1 do
+        local rankInfo = LESSER_HEALING_WAVE_RANKS[i];
+        local spellName = "Lesser Healing Wave(Rank " .. rankInfo.rank .. ")";
+        
+        if IsSpellKnown(spellName) then
+            local adjustedHealAmount = rankInfo.healAmount * (1 + settings.DOWNRANK_AGGRESSIVENESS);
+            if missingHealth <= adjustedHealAmount then
+                return spellName;
+            end
+        end
+    end
+    
+    -- If no appropriate rank found, use the highest available rank
+    for i = table.getn(LESSER_HEALING_WAVE_RANKS), 1, -1 do
+        local rankInfo = LESSER_HEALING_WAVE_RANKS[i];
+        local spellName = "Lesser Healing Wave(Rank " .. rankInfo.rank .. ")";
+        
+        if IsSpellKnown(spellName) then
+            return spellName;
+        end
+    end
+    
+    -- Fallback - shouldn't happen if you have at least one rank
+    return "Lesser Healing Wave(Rank 1)";
 end
 
 -- Totem logic
+-- Totem logic
 local function DropTotems()
+    local currentTime = GetTime();
+    
+    -- Check if we're in the cooldown period after Totemic Recall
+    if currentTime - lastTotemRecallTime < TOTEM_RECALL_COOLDOWN then
+        local remainingCooldown = TOTEM_RECALL_COOLDOWN - (currentTime - lastTotemRecallTime);
+        PrintMessage("Totems on cooldown after recall. Please wait " .. string.format("%.1f", remainingCooldown) .. " seconds.");
+        return;
+    end
+
     local totems = {
         { buff = "Water Shield", spell = "Water Shield" },
         { buff = "Strength of Earth", spell = "Strength of Earth Totem" },
@@ -100,15 +175,50 @@ local function DropTotems()
         table.insert(totems, { buff = "Mana Spring", spell = "Mana Spring Totem" });
     end
 
+    local allActive = true;
+    
     -- Drop totems based on missing buffs
     for _, totem in ipairs(totems) do
         if not totem.buff or not buffed(totem.buff, 'player') then
             CastSpellByName(totem.spell);
             PrintMessage("Casting " .. totem.spell .. ".");
+            allActive = false;
+            -- Reset the activation timestamp when we drop a new totem
+            lastAllTotemsActiveTime = 0;
             return;
         end
     end
-    PrintMessage("All totems and buffs are active.");
+    
+    if allActive then
+        PrintMessage("All totems and buffs are active.");
+        
+        -- Only set the timestamp if it hasn't been set yet (first time all are active)
+        if lastAllTotemsActiveTime == 0 then
+            lastAllTotemsActiveTime = currentTime;
+            PrintMessage("Totems now active. Totemic Recall available in " .. TOTEM_RECALL_ACTIVATION_COOLDOWN .. " seconds.");
+            return; -- Don't proceed to recall check on this call
+        end
+        
+        -- Check activation cooldown - prevent premature Totemic Recall (applies always, even out of combat)
+        if currentTime - lastAllTotemsActiveTime < TOTEM_RECALL_ACTIVATION_COOLDOWN then
+            local remainingActivationCooldown = TOTEM_RECALL_ACTIVATION_COOLDOWN - (currentTime - lastAllTotemsActiveTime);
+            PrintMessage("Totemic Recall activation cooldown. Please wait " .. string.format("%.1f", remainingActivationCooldown) .. " seconds.");
+            return;
+        end
+        
+        -- Check if we can cast Totemic Recall (out of combat)
+        if not UnitAffectingCombat("player") then
+            CastSpellByName("Totemic Recall");
+            lastTotemRecallTime = GetTime(); -- Start cooldown timer
+            lastAllTotemsActiveTime = 0; -- Reset activation timestamp
+            PrintMessage("Casting Totemic Recall. Totems will be available in " .. TOTEM_RECALL_COOLDOWN .. " seconds.");
+        else
+            PrintMessage("Cannot cast Totemic Recall while in combat.");
+        end
+    else
+        -- Reset the all totems active timestamp if not all totems are active
+        lastAllTotemsActiveTime = 0;
+    end
 end
 
 -- Healing logic
@@ -205,8 +315,10 @@ local function SetDownrankAggressiveness(level)
     if level and (level == 0 or level == 1 or level == 2) then
         settings.DOWNRANK_AGGRESSIVENESS = level;
         BackpackerDB.DOWNRANK_AGGRESSIVENESS = level;
-        settings.CHAIN_HEAL_SPELL = "Chain Heal(Rank " .. (3 - level) .. ")";
-        BackpackerDB.CHAIN_HEAL_SPELL = settings.CHAIN_HEAL_SPELL;
+        
+        -- Update chain heal spell based on available ranks and downranking level
+        InitializeChainHealSpell();
+        
         DEFAULT_CHAT_FRAME:AddMessage("Backpacker: Downranking aggressiveness set to " .. level .. ".");
     else
         DEFAULT_CHAT_FRAME:AddMessage("Backpacker: Invalid downranking aggressiveness level. Use 0, 1, or 2.");
