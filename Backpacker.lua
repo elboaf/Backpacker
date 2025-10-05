@@ -1,3 +1,90 @@
+--[[
+================================================================================
+BACKPACKER ADDON - SHAMAN AUTOMATION SUITE
+================================================================================
+
+VERSION COMPATIBILITY:
+- World of Warcraft: Vanilla 1.12.1
+- Lua Version: 5.0
+- API: Classic WoW 1.12 API
+
+CORE FUNCTIONALITY:
+1. SMART HEALING SYSTEM:
+   - Heals party/raid members below health threshold
+   - Uses downranking for Lesser Healing Wave based on missing health
+   - Automatically detects available spell ranks (won't try to cast unlearned ranks)
+   - Chain Heal support when multiple members need healing
+   - Hybrid mode: Switches to DPS when healing not needed
+
+2. ADVANCED TOTEM MANAGEMENT:
+   - Fast totem dropping with local verification flags
+   - Independent server buff verification with 3-second buffer periods
+   - Parallel totem verification (no sequential dependencies)
+   - Smart Totemic Recall with dual cooldown system
+   - Separate Water Shield handling (self-buff, not affected by totem recall)
+
+TOTEM SYSTEM BEHAVIOR (CRITICAL DESIGN):
+- PHASE 1: FAST DROPPING
+  * Spam /bpbuff to rapidly drop all totems (one per call)
+  * Each totem gets local verification flag and independent timestamp
+  * No waiting for server responses during initial dropping
+
+- PHASE 2: PARALLEL VERIFICATION  
+  * Each totem has independent 3-second buffer period (TOTEM_VERIFICATION_TIME)
+  * All totems verified in parallel, not sequentially
+  * After buffer period, local flags sync with server buff status
+  * Missing buffs reset local flags for fast re-dropping
+
+- PHASE 3: TOTEMIC RECALL
+  * Only available when all totems server-verified
+  * 2-second activation cooldown prevents premature recall (TOTEM_RECALL_ACTIVATION_COOLDOWN)
+  * 3-second cooldown after recall before new totems (TOTEM_RECALL_COOLDOWN)
+  * Only works out of combat
+
+WATER SHIELD SPECIAL HANDLING:
+- Treated as self-buff, not totem
+- No local verification flags - only server buff checks
+- Not affected by Totemic Recall
+- Cast immediately when buff missing
+
+COOLDOWN SYSTEM:
+- Recall-to-Drop: 3 seconds after Totemic Recall before new totems
+- Drop-to-Recall: 2 seconds after all totems active before recall available
+- Each totem: 3-second buffer for server verification
+
+KEY DESIGN DECISIONS:
+1. No artificial delays between casting different totems
+2. Independent buffer periods prevent "cascading" verification delays  
+3. Parallel verification allows simultaneous invalidation of multiple totems
+4. Fast recovery when totems expire/out-of-range via local flag resets
+5. Server buff partial matching handles custom server buff names
+
+DEBUGGING:
+- Use /bpdebug to toggle debug messages
+- Debug shows totem states, verification timing, and decision logic
+
+SLASH COMMANDS:
+/bpheal - Execute healing logic
+/bpbuff - Drop totems / Recall totems (context-aware)
+/bpdebug - Toggle debug messages
+/bpfollow - Toggle auto-follow
+/bpchainheal - Toggle Chain Heal
+/bpdr <0|1|2> - Set downranking aggressiveness
+/bpstrath - Toggle Stratholme mode (Disease Cleansing)
+/bpzg - Toggle ZG mode (Poison Cleansing) 
+/bphybrid - Toggle Hybrid mode (80% threshold + DPS)
+/bp or /backpacker - Show usage
+
+RECENT OPTIMIZATIONS:
+- Independent totem buffer periods (no sequential verification delays)
+- Parallel invalidation of multiple expired totems
+- Fast dropping sequence restarts immediately after invalidation
+- Water Shield separated from totem logic
+- Server buff partial matching for custom server implementations
+
+================================================================================
+]]
+
 -- Backpacker.lua
 -- Main script for Backpacker addon
 
@@ -47,7 +134,17 @@ local CHAIN_HEAL_RANKS = {
 local lastTotemRecallTime = 0;
 local lastAllTotemsActiveTime = 0;
 local TOTEM_RECALL_COOLDOWN = 3; -- seconds
-local TOTEM_RECALL_ACTIVATION_COOLDOWN = 2; -- seconds
+local TOTEM_RECALL_ACTIVATION_COOLDOWN = 3; -- seconds
+local TOTEM_VERIFICATION_TIME = 1.25; -- How long to wait before verifying totems
+local TOTEM_CAST_COMPLETION_DELAY = 0.5; -- seconds
+
+-- Totem state tracking (excluding Water Shield)
+local totemState = {
+    { buff = "Strength of Earth", spell = "Strength of Earth Totem", locallyVerified = false, serverVerified = false, localVerifyTime = 0 },
+    { buff = "Windfury Totem", spell = "Windfury Totem", locallyVerified = false, serverVerified = false, localVerifyTime = 0 },
+    { buff = "Flametongue Totem", spell = "Flametongue Totem", locallyVerified = false, serverVerified = false, localVerifyTime = 0 },
+    { buff = "Mana Spring", spell = "Mana Spring Totem", locallyVerified = false, serverVerified = false, localVerifyTime = 0 },
+};
 
 -- Event handler
 local function OnEvent(event, arg1)
@@ -147,8 +244,7 @@ local function SelectHealingSpellRank(missingHealth)
     return "Lesser Healing Wave(Rank 1)";
 end
 
--- Totem logic
--- Totem logic
+-- Updated Totem logic with independent buffer periods and parallel verification
 local function DropTotems()
     local currentTime = GetTime();
     
@@ -159,58 +255,130 @@ local function DropTotems()
         return;
     end
 
-    local totems = {
-        { buff = "Water Shield", spell = "Water Shield" },
-        { buff = "Strength of Earth", spell = "Strength of Earth Totem" },
-        { buff = "Windfury Totem", spell = "Windfury Totem" },
-        { buff = "Flametongue Totem", spell = "Flametongue Totem" },
-    };
-
-    -- Add Mana Spring Totem or cleansing totem based on mode
+    -- Update cleansing totem based on mode
+    totemState[4].spell = "Mana Spring Totem";
+    totemState[4].buff = "Mana Spring";
     if settings.STRATHOLME_MODE then
-        table.insert(totems, { buff = nil, spell = "Disease Cleansing Totem" });
+        totemState[4].spell = "Disease Cleansing Totem";
+        totemState[4].buff = nil;
     elseif settings.ZG_MODE then
-        table.insert(totems, { buff = nil, spell = "Poison Cleansing Totem" });
-    else
-        table.insert(totems, { buff = "Mana Spring", spell = "Mana Spring Totem" });
+        totemState[4].spell = "Poison Cleansing Totem";
+        totemState[4].buff = nil;
     end
 
-    local allActive = true;
-    
-    -- Drop totems based on missing buffs
-    for _, totem in ipairs(totems) do
-        if not totem.buff or not buffed(totem.buff, 'player') then
+    -- WATER SHIELD: Only check server buff status, no local verification
+    if not buffed("Water Shield", 'player') then
+        CastSpellByName("Water Shield");
+        PrintMessage("Casting Water Shield.");
+        return; -- One spell per call
+    end
+
+    -- PHASE 1: Drop all totems quickly (local verification only)
+    for i, totem in ipairs(totemState) do
+        if not totem.locallyVerified then
+            -- This totem hasn't been dropped yet - drop it!
             CastSpellByName(totem.spell);
             PrintMessage("Casting " .. totem.spell .. ".");
-            allActive = false;
-            -- Reset the activation timestamp when we drop a new totem
-            lastAllTotemsActiveTime = 0;
-            return;
+            totemState[i].locallyVerified = true; -- Mark as locally verified
+            totemState[i].localVerifyTime = currentTime; -- Record independent timestamp
+            return; -- One totem per call
+        end
+    end
+
+    -- PHASE 2: Parallel verification - check all locally verified totems independently
+    local allServerVerified = true;
+    local needsFastDropRestart = false;
+    
+    -- First pass: Check all totems in parallel and collect which ones need invalidation
+    local totemsToInvalidate = {};
+    for i, totem in ipairs(totemState) do
+        -- Only check totems that are locally verified (already cast)
+        if totem.locallyVerified then
+            -- ADD CAST COMPLETION DELAY CHECK RIGHT HERE:
+            local timeSinceLocalVerify = currentTime - totem.localVerifyTime;
+            if timeSinceLocalVerify < TOTEM_CAST_COMPLETION_DELAY then
+                -- Still within cast completion period - skip server check for now
+                PrintMessage(totem.spell .. " cast completing (" .. string.format("%.1f", TOTEM_CAST_COMPLETION_DELAY - timeSinceLocalVerify) .. "s)");
+                allServerVerified = false;
+            else
+                -- Cast completion period passed - proceed with normal verification
+                if totem.buff then
+                    -- Totems with buffs - check if server confirms they're active
+                    if buffed(totem.buff, 'player') then
+                        if not totem.serverVerified then
+                            PrintMessage(totem.buff .. " confirmed active by server.");
+                            totemState[i].serverVerified = true;
+                        end
+                    else
+                        -- Server says buff is not active - check if enough time has passed for THIS totem
+                        if timeSinceLocalVerify > TOTEM_VERIFICATION_TIME then
+                            -- Mark for invalidation
+                            totemsToInvalidate[i] = true;
+                            allServerVerified = false;
+                            needsFastDropRestart = true;
+                        else
+                            -- Still within buffer period for this totem, keep waiting
+                            PrintMessage(totem.buff .. " not yet confirmed (waiting " .. string.format("%.1f", TOTEM_VERIFICATION_TIME - timeSinceLocalVerify) .. "s)");
+                            allServerVerified = false;
+                        end
+                    end
+                else
+                    -- Totems without buffs (cleansing) - we assume they're active once cast
+                    if not totem.serverVerified then
+                        PrintMessage(totem.spell .. " assumed active.");
+                        totemState[i].serverVerified = true;
+                    end
+                end
+            end
         end
     end
     
-    if allActive then
+    -- Second pass: Invalidate all marked totems (this happens in parallel, not sequentially)
+    for i, _ in pairs(totemsToInvalidate) do
+        local timeSinceLocalVerify = currentTime - totemState[i].localVerifyTime;
+        PrintMessage(totemState[i].buff .. " missing after " .. string.format("%.1f", timeSinceLocalVerify) .. "s - resetting for recast.");
+        totemState[i].locallyVerified = false;
+        totemState[i].serverVerified = false;
+        totemState[i].localVerifyTime = 0;
+    end
+    
+    -- If any totems were invalidated, restart fast dropping
+    if needsFastDropRestart then
+        lastAllTotemsActiveTime = 0;
+        return; -- Return early to allow fast dropping on next call
+    end
+
+    -- PHASE 3: All totems server verified - handle Totemic Recall
+    if allServerVerified then
         PrintMessage("All totems and buffs are active.");
         
-        -- Only set the timestamp if it hasn't been set yet (first time all are active)
+        -- Only set the timestamp if it hasn't been set yet
         if lastAllTotemsActiveTime == 0 then
             lastAllTotemsActiveTime = currentTime;
+            DEFAULT_CHAT_FRAME:AddMessage("Totems: ACTIVE", 1, 0, 0);
             PrintMessage("Totems now active. Totemic Recall available in " .. TOTEM_RECALL_ACTIVATION_COOLDOWN .. " seconds.");
-            return; -- Don't proceed to recall check on this call
+            return;
         end
         
-        -- Check activation cooldown - prevent premature Totemic Recall (applies always, even out of combat)
+        -- Check activation cooldown
         if currentTime - lastAllTotemsActiveTime < TOTEM_RECALL_ACTIVATION_COOLDOWN then
             local remainingActivationCooldown = TOTEM_RECALL_ACTIVATION_COOLDOWN - (currentTime - lastAllTotemsActiveTime);
             PrintMessage("Totemic Recall activation cooldown. Please wait " .. string.format("%.1f", remainingActivationCooldown) .. " seconds.");
             return;
         end
         
-        -- Check if we can cast Totemic Recall (out of combat)
+        -- Cast Totemic Recall if out of combat
         if not UnitAffectingCombat("player") then
             CastSpellByName("Totemic Recall");
-            lastTotemRecallTime = GetTime(); -- Start cooldown timer
-            lastAllTotemsActiveTime = 0; -- Reset activation timestamp
+            lastTotemRecallTime = GetTime();
+            lastAllTotemsActiveTime = 0;
+            DEFAULT_CHAT_FRAME:AddMessage("Totems: RECALLED", 0, 1, 0);
+            -- Reset all totem states (but NOT Water Shield)
+            for i, totem in ipairs(totemState) do
+                totemState[i].locallyVerified = false;
+                totemState[i].serverVerified = false;
+                totemState[i].localVerifyTime = 0;
+            end
             PrintMessage("Casting Totemic Recall. Totems will be available in " .. TOTEM_RECALL_COOLDOWN .. " seconds.");
         else
             PrintMessage("Cannot cast Totemic Recall while in combat.");
