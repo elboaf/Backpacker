@@ -17,6 +17,7 @@ CORE FUNCTIONALITY:
    - Hybrid mode: Switches to DPS when healing not needed
 
 2. ADVANCED TOTEM MANAGEMENT:
+   - FULLY CUSTOMIZABLE TOTEMS for each element
    - Configurable delay between totem casts (TOTEM_CAST_DELAY - default 0.25s)
    - Continuous maintenance of all totems (auto-recast if destroyed/expired/out-of-range)
    - Fast totem dropping with local verification flags
@@ -25,6 +26,25 @@ CORE FUNCTIONALITY:
    - Smart Totemic Recall with dual cooldown system
    - Separate Water Shield handling (self-buff, not affected by totem recall)
    - ZG/Stratholme combat mode: Spammable cleansing totems for mass dispels
+
+TOTEM CUSTOMIZATION:
+- EARTH TOTEMS:
+  * Strength of Earth Totem (default) - /bpsoe
+  * Stoneskin Totem - /bpss
+
+- FIRE TOTEMS:
+  * Flametongue Totem (default) - /bpft
+  * Frost Resistance Totem - /bpfrr
+
+- AIR TOTEMS:
+  * Windfury Totem (default) - /bpwf
+  * Grace of Air Totem - /bpgoa
+  * Nature Resistance Totem - /bpnr
+
+- WATER TOTEMS:
+  * Mana Spring Totem (default) - /bpms
+  * Healing Stream Totem - /bphs
+  * Fire Resistance Totem - /bpfr
 
 TOTEM SYSTEM BEHAVIOR (CRITICAL DESIGN):
 - PHASE 1: CONTINUOUS MAINTENANCE
@@ -76,6 +96,8 @@ KEY DESIGN DECISIONS:
 5. Fast recovery when totems expire/out-of-range via local flag resets
 6. Server buff partial matching handles custom server buff names
 7. ZG/Strath mode provides emergency mass dispels without losing buff totems
+8. Fully customizable totem selection with ephemeral settings
+9. Mode switches reset to appropriate defaults
 
 DEBUGGING:
 - Use /bpdebug to toggle debug messages
@@ -92,9 +114,17 @@ SLASH COMMANDS:
 /bpzg - Toggle ZG mode (Poison Cleansing) 
 /bphybrid - Toggle Hybrid mode (80% threshold + DPS)
 /bpdelay <seconds> - Set totem cast delay (default: 0.25)
+
+TOTEM CUSTOMIZATION COMMANDS:
+EARTH: /bpsoe (Strength), /bpss (Stoneskin)
+FIRE: /bpft (Flametongue), /bpfrr (Frost Resist)
+AIR: /bpwf (Windfury), /bpgoa (Grace of Air), /bpnr (Nature Resist)
+WATER: /bpms (Mana Spring), /bphs (Healing Stream), /bpfr (Fire Resist)
+
 /bp or /backpacker - Show usage
 
 RECENT OPTIMIZATIONS:
+- Fully customizable totem selection for each element
 - Configurable cast delay (0.25s optimal) for perfect server responsiveness
 - Continuous totem maintenance (auto-recast on expiry/destruction)
 - ZG/Strath combat mode for spammable mass dispels
@@ -121,7 +151,13 @@ BackpackerDB = BackpackerDB or {
     HEALTH_THRESHOLD = 90,
     STRATHOLME_MODE = false,
     ZG_MODE = false,
-    HYBRID_MODE = false,  -- New hybrid mode
+    HYBRID_MODE = false,
+    
+    -- Customizable totem settings
+    EARTH_TOTEM = "Strength of Earth Totem",
+    FIRE_TOTEM = "Flametongue Totem", 
+    AIR_TOTEM = "Windfury Totem",
+    WATER_TOTEM = "Mana Spring Totem",
 };
 
 -- Local variables to store settings
@@ -134,7 +170,13 @@ local settings = {
     HEALTH_THRESHOLD = BackpackerDB.HEALTH_THRESHOLD,
     STRATHOLME_MODE = BackpackerDB.STRATHOLME_MODE,
     ZG_MODE = BackpackerDB.ZG_MODE,
-    HYBRID_MODE = BackpackerDB.HYBRID_MODE,  -- New hybrid mode
+    HYBRID_MODE = BackpackerDB.HYBRID_MODE,
+    
+    -- Customizable totem settings
+    EARTH_TOTEM = BackpackerDB.EARTH_TOTEM,
+    FIRE_TOTEM = BackpackerDB.FIRE_TOTEM,
+    AIR_TOTEM = BackpackerDB.AIR_TOTEM,
+    WATER_TOTEM = BackpackerDB.WATER_TOTEM,
 };
 
 -- Spell configurations
@@ -153,27 +195,74 @@ local CHAIN_HEAL_RANKS = {
     { rank = 3, manaCost = 300, healAmount = 600 },
 };
 
+-- Totem definitions with their corresponding buff names
+local TOTEM_DEFINITIONS = {
+    -- Earth Totems
+    ["Strength of Earth Totem"] = { buff = "Strength of Earth", element = "earth" },
+    ["Stoneskin Totem"] = { buff = "Stoneskin", element = "earth" },
+    
+    -- Fire Totems  
+    ["Flametongue Totem"] = { buff = "Flametongue Totem", element = "fire" },
+    ["Frost Resistance Totem"] = { buff = "Frost Resistance", element = "fire" },
+    
+    -- Air Totems
+    ["Windfury Totem"] = { buff = "Windfury Totem", element = "air" },
+    ["Grace of Air Totem"] = { buff = "Grace of Air", element = "air" },
+    ["Nature Resistance Totem"] = { buff = "Nature Resistance", element = "air" },
+    
+    -- Water Totems
+    ["Mana Spring Totem"] = { buff = "Mana Spring", element = "water" },
+    ["Healing Stream Totem"] = { buff = "Healing Stream", element = "water" },
+    ["Fire Resistance Totem"] = { buff = "Fire Resistance", element = "water" },
+    ["Poison Cleansing Totem"] = { buff = nil, element = "water" },
+    ["Disease Cleansing Totem"] = { buff = nil, element = "water" },
+};
+
 -- Cooldown variables for totem logic
 local lastTotemRecallTime = 0;
 local lastAllTotemsActiveTime = 0;
-local lastTotemCastTime = 0;  -- Track last totem cast time for delay
-local pendingTotems = {};  -- Initialize as empty table
-local TOTEM_RECALL_COOLDOWN = 3; -- seconds
-local TOTEM_RECALL_ACTIVATION_COOLDOWN = 3; -- seconds
-local TOTEM_VERIFICATION_TIME = 1; -- How long to wait before verifying totems
-local TOTEM_CAST_DELAY = 0.25; -- Delay between totem casts (configurable)
+local lastTotemCastTime = 0;
+local pendingTotems = {};
+local TOTEM_RECALL_COOLDOWN = 3;
+local TOTEM_RECALL_ACTIVATION_COOLDOWN = 3;
+local TOTEM_VERIFICATION_TIME = 1;
+local TOTEM_CAST_DELAY = 0.25;
 
--- Totem state tracking
--- Totem state tracking (excluding Water Shield)
--- Totem state tracking (excluding Water Shield)
-local totemState = {
-    { buff = "Strength of Earth", spell = "Strength of Earth Totem", locallyVerified = false, serverVerified = false, localVerifyTime = 0 },
-    { buff = "Windfury Totem", spell = "Windfury Totem", locallyVerified = false, serverVerified = false, localVerifyTime = 0 },
-    { buff = "Flametongue Totem", spell = "Flametongue Totem", locallyVerified = false, serverVerified = false, localVerifyTime = 0 },
-    { buff = "Mana Spring", spell = "Mana Spring Totem", locallyVerified = false, serverVerified = false, localVerifyTime = 0 },
-};
+-- Initialize totem state with current settings
+local function InitializeTotemState()
+    return {
+        { 
+            spell = settings.EARTH_TOTEM, 
+            buff = TOTEM_DEFINITIONS[settings.EARTH_TOTEM] and TOTEM_DEFINITIONS[settings.EARTH_TOTEM].buff,
+            locallyVerified = false, 
+            serverVerified = false, 
+            localVerifyTime = 0 
+        },
+        { 
+            spell = settings.FIRE_TOTEM, 
+            buff = TOTEM_DEFINITIONS[settings.FIRE_TOTEM] and TOTEM_DEFINITIONS[settings.FIRE_TOTEM].buff,
+            locallyVerified = false, 
+            serverVerified = false, 
+            localVerifyTime = 0 
+        },
+        { 
+            spell = settings.AIR_TOTEM, 
+            buff = TOTEM_DEFINITIONS[settings.AIR_TOTEM] and TOTEM_DEFINITIONS[settings.AIR_TOTEM].buff,
+            locallyVerified = false, 
+            serverVerified = false, 
+            localVerifyTime = 0 
+        },
+        { 
+            spell = settings.WATER_TOTEM, 
+            buff = TOTEM_DEFINITIONS[settings.WATER_TOTEM] and TOTEM_DEFINITIONS[settings.WATER_TOTEM].buff,
+            locallyVerified = false, 
+            serverVerified = false, 
+            localVerifyTime = 0 
+        },
+    };
+end
 
-
+local totemState = InitializeTotemState();
 
 -- Event handler
 local function OnEvent(event, arg1)
@@ -181,8 +270,10 @@ local function OnEvent(event, arg1)
         for k, v in pairs(BackpackerDB) do
             settings[k] = v;
         end
-        InitializeChainHealSpell();  -- Initialize chain heal based on available spells
-        DEFAULT_CHAT_FRAME:AddMessage("Backpacker: Addon loaded. Settings initialized.");
+        InitializeChainHealSpell();
+        -- Reinitialize totem state with loaded settings
+        totemState = InitializeTotemState();
+        DEFAULT_CHAT_FRAME:AddMessage("Backpacker: Addon loaded. Totem customization enabled.");
     end
 end
 
@@ -208,7 +299,7 @@ end
 -- Utility function to check if a spell is available (Lua 5.0 compatible)
 local function IsSpellKnown(spellName)
     local name, rank;
-    for i = 1, 200 do  -- Check a large range of spell slots
+    for i = 1, 200 do
         name, rank = GetSpellName(i, BOOKTYPE_SPELL);
         if name then
             local fullSpellName = name;
@@ -227,7 +318,6 @@ end
 
 -- Update the Chain Heal selection in the settings initialization
 local function InitializeChainHealSpell()
-    -- Check available chain heal ranks from highest to lowest
     for i = table.getn(CHAIN_HEAL_RANKS), 1, -1 do
         local rankInfo = CHAIN_HEAL_RANKS[i];
         local spellName = "Chain Heal(Rank " .. rankInfo.rank .. ")";
@@ -239,14 +329,12 @@ local function InitializeChainHealSpell()
         end
     end
     
-    -- Fallback
     settings.CHAIN_HEAL_SPELL = "Chain Heal(Rank 1)";
     BackpackerDB.CHAIN_HEAL_SPELL = "Chain Heal(Rank 1)";
 end
 
 -- Updated function to select healing spell rank based on available spells
 local function SelectHealingSpellRank(missingHealth)
-    -- Check available ranks from highest to lowest
     for i = table.getn(LESSER_HEALING_WAVE_RANKS), 1, -1 do
         local rankInfo = LESSER_HEALING_WAVE_RANKS[i];
         local spellName = "Lesser Healing Wave(Rank " .. rankInfo.rank .. ")";
@@ -259,7 +347,6 @@ local function SelectHealingSpellRank(missingHealth)
         end
     end
     
-    -- If no appropriate rank found, use the highest available rank
     for i = table.getn(LESSER_HEALING_WAVE_RANKS), 1, -1 do
         local rankInfo = LESSER_HEALING_WAVE_RANKS[i];
         local spellName = "Lesser Healing Wave(Rank " .. rankInfo.rank .. ")";
@@ -269,22 +356,21 @@ local function SelectHealingSpellRank(missingHealth)
         end
     end
     
-    -- Fallback - shouldn't happen if you have at least one rank
     return "Lesser Healing Wave(Rank 1)";
 end
 
--- Totem logic
--- Updated Totem logic with pending system (no artificial cooldown)
--- Updated Totem logic with better timeout handling
--- Updated Totem logic with independent totem tracking
--- Updated Totem logic - much simpler
--- Updated Totem logic with separate Water Shield handling
--- Updated Totem logic with buffer period for server response
--- Updated Totem logic with independent buffer periods
--- Updated Totem logic with configurable cast delay
--- Totem logic with instant-cast cleansing totems for ZG/Strath modes
--- Totem logic with proper cleansing totem handling
--- Totem logic with proper maintenance of all totems
+-- Function to reset totem state when totems change
+local function ResetTotemState()
+    for i, totem in ipairs(totemState) do
+        totemState[i].locallyVerified = false;
+        totemState[i].serverVerified = false;
+        totemState[i].localVerifyTime = 0;
+    end
+    lastAllTotemsActiveTime = 0;
+    PrintMessage("Totem state reset for new configuration.");
+end
+
+-- Totem logic with customizable totems
 local function DropTotems()
     local currentTime = GetTime();
     
@@ -302,10 +388,8 @@ local function DropTotems()
         return;
     end
 
-    -- Update cleansing totem based on mode
+    -- Update water totem based on mode and settings
     local cleansingTotemSpell = nil;
-    totemState[4].spell = "Mana Spring Totem";
-    totemState[4].buff = "Mana Spring";
     if settings.STRATHOLME_MODE then
         cleansingTotemSpell = "Disease Cleansing Totem";
         totemState[4].spell = cleansingTotemSpell;
@@ -314,19 +398,32 @@ local function DropTotems()
         cleansingTotemSpell = "Poison Cleansing Totem";
         totemState[4].spell = cleansingTotemSpell;
         totemState[4].buff = nil;
+    else
+        -- Use customized water totem when not in special modes
+        totemState[4].spell = settings.WATER_TOTEM;
+        totemState[4].buff = TOTEM_DEFINITIONS[settings.WATER_TOTEM] and TOTEM_DEFINITIONS[settings.WATER_TOTEM].buff;
     end
+
+    -- Update other totems with current customization
+    totemState[1].spell = settings.EARTH_TOTEM;
+    totemState[1].buff = TOTEM_DEFINITIONS[settings.EARTH_TOTEM] and TOTEM_DEFINITIONS[settings.EARTH_TOTEM].buff;
+    
+    totemState[2].spell = settings.FIRE_TOTEM;
+    totemState[2].buff = TOTEM_DEFINITIONS[settings.FIRE_TOTEM] and TOTEM_DEFINITIONS[settings.FIRE_TOTEM].buff;
+    
+    totemState[3].spell = settings.AIR_TOTEM;
+    totemState[3].buff = TOTEM_DEFINITIONS[settings.AIR_TOTEM] and TOTEM_DEFINITIONS[settings.AIR_TOTEM].buff;
 
     -- WATER SHIELD: Only check server buff status, no local verification
     if not buffed("Water Shield", 'player') then
         CastSpellByName("Water Shield");
         PrintMessage("Casting Water Shield.");
         lastTotemCastTime = currentTime;
-        return; -- One spell per call
+        return;
     end
 
     -- SPECIAL CASE: If in ZG/Strath mode and in combat, AND all other totems are active, allow recasting cleansing totem
     if cleansingTotemSpell and UnitAffectingCombat("player") then
-        -- First, check if the first 3 totems (Strength, Windfury, Flametongue) are all server verified
         local otherTotemsActive = true;
         for i = 1, 3 do
             if not totemState[i].serverVerified then
@@ -335,9 +432,7 @@ local function DropTotems()
             end
         end
         
-        -- If all other totems are active, allow recasting the cleansing totem as a mass dispel
         if otherTotemsActive then
-            -- Reset the cleansing totem state to force a recast
             totemState[4].locallyVerified = false;
             totemState[4].serverVerified = false;
             totemState[4].localVerifyTime = 0;
@@ -348,33 +443,26 @@ local function DropTotems()
     -- PHASE 1: Check for expired/destroyed totems and reset their state
     for i, totem in ipairs(totemState) do
         if totem.locallyVerified and totem.serverVerified then
-            -- This totem was previously verified, but check if it's still active
             if totem.buff then
-                -- Totems with buffs - check if the buff is still present
                 if not buffed(totem.buff, 'player') then
-                    -- Buff is missing - totem was destroyed, expired, or outranged
                     PrintMessage(totem.buff .. " has expired/destroyed - resetting for recast.");
                     totemState[i].locallyVerified = false;
                     totemState[i].serverVerified = false;
                     totemState[i].localVerifyTime = 0;
                 end
-            else
-                -- Cleansing totems - we can't verify via buff, so we rely on the combat recast logic
-                -- They'll be automatically recast via the normal rotation if needed
             end
         end
     end
 
-    -- PHASE 2: Drop all totems that need to be dropped (local verification only)
+    -- PHASE 2: Drop all totems that need to be dropped
     for i, totem in ipairs(totemState) do
         if not totem.locallyVerified then
-            -- This totem hasn't been dropped yet or needs recasting - drop it!
             CastSpellByName(totem.spell);
             PrintMessage("Casting " .. totem.spell .. ".");
-            totemState[i].locallyVerified = true; -- Mark as locally verified
-            totemState[i].localVerifyTime = currentTime; -- Record independent timestamp
-            lastTotemCastTime = currentTime; -- Update cast time for delay
-            return; -- One totem per call
+            totemState[i].locallyVerified = true;
+            totemState[i].localVerifyTime = currentTime;
+            lastTotemCastTime = currentTime;
+            return;
         end
     end
 
@@ -383,18 +471,14 @@ local function DropTotems()
     local needsFastDropRestart = false;
     
     for i, totem in ipairs(totemState) do
-        -- Only check totems that are locally verified but not server verified
         if totem.locallyVerified and not totem.serverVerified then
             if totem.buff then
-                -- Totems with buffs - check if server confirms they're active
                 if buffed(totem.buff, 'player') then
                     PrintMessage(totem.buff .. " confirmed active by server.");
                     totemState[i].serverVerified = true;
                 else
-                    -- Server says buff is not active - check if enough time has passed for THIS totem
                     local timeSinceLocalVerify = currentTime - totem.localVerifyTime;
                     if timeSinceLocalVerify > TOTEM_VERIFICATION_TIME then
-                        -- Enough time has passed for this specific totem - reset for recast
                         PrintMessage(totem.buff .. " missing after " .. string.format("%.1f", timeSinceLocalVerify) .. "s - resetting for recast.");
                         totemState[i].locallyVerified = false;
                         totemState[i].serverVerified = false;
@@ -402,35 +486,30 @@ local function DropTotems()
                         allServerVerified = false;
                         needsFastDropRestart = true;
                     else
-                        -- Still within buffer period for this totem, keep waiting
                         PrintMessage(totem.buff .. " not yet confirmed (waiting " .. string.format("%.1f", TOTEM_VERIFICATION_TIME - timeSinceLocalVerify) .. "s)");
                         allServerVerified = false;
                     end
                 end
             else
-                -- Totems without buffs (cleansing) - we assume they're active once cast
                 PrintMessage(totem.spell .. " assumed active.");
                 totemState[i].serverVerified = true;
             end
         end
         
-        -- Update allServerVerified flag based on current state
         if not totem.serverVerified then
             allServerVerified = false;
         end
     end
     
-    -- If any totems had their local flags reset after their individual buffer periods, restart fast dropping
     if needsFastDropRestart then
         lastAllTotemsActiveTime = 0;
-        return; -- Return early to allow fast dropping on next call
+        return;
     end
 
     -- PHASE 4: All totems server verified - handle Totemic Recall
     if allServerVerified then
         PrintMessage("All totems and buffs are active.");
         
-        -- Only set the timestamp if it hasn't been set yet
         if lastAllTotemsActiveTime == 0 then
             lastAllTotemsActiveTime = currentTime;
             DEFAULT_CHAT_FRAME:AddMessage("Totems: ACTIVE", 1, 0, 0);
@@ -438,36 +517,29 @@ local function DropTotems()
             return;
         end
         
-        -- Check activation cooldown
         if currentTime - lastAllTotemsActiveTime < TOTEM_RECALL_ACTIVATION_COOLDOWN then
             local remainingActivationCooldown = TOTEM_RECALL_ACTIVATION_COOLDOWN - (currentTime - lastAllTotemsActiveTime);
             PrintMessage("Totemic Recall activation cooldown. Please wait " .. string.format("%.1f", remainingActivationCooldown) .. " seconds.");
             return;
         end
         
-        -- Cast Totemic Recall if out of combat
         if not UnitAffectingCombat("player") then
             CastSpellByName("Totemic Recall");
             lastTotemRecallTime = GetTime();
             lastAllTotemsActiveTime = 0;
-            lastTotemCastTime = currentTime; -- Update cast time for delay
+            lastTotemCastTime = currentTime;
             DEFAULT_CHAT_FRAME:AddMessage("Totems: RECALLED", 1, 1, 0);
-            -- Reset all totem states (but NOT Water Shield)
-            for i, totem in ipairs(totemState) do
-                totemState[i].locallyVerified = false;
-                totemState[i].serverVerified = false;
-                totemState[i].localVerifyTime = 0;
-            end
+            ResetTotemState();
             PrintMessage("Casting Totemic Recall. Totems will be available in " .. TOTEM_RECALL_COOLDOWN .. " seconds.");
         else
             PrintMessage("Cannot cast Totemic Recall while in combat.");
         end
     else
-        -- Reset the all totems active timestamp if not all totems are active
         lastAllTotemsActiveTime = 0;
     end
 end
 
+-- Healing logic (unchanged)
 -- Healing logic
 local function HealPartyMembers()
     local lowHealthMembers = {};
@@ -550,6 +622,51 @@ local function HealPartyMembers()
     end
 end
 
+-- Totem customization functions
+local function SetEarthTotem(totemName, displayName)
+    if TOTEM_DEFINITIONS[totemName] then
+        settings.EARTH_TOTEM = totemName;
+        BackpackerDB.EARTH_TOTEM = totemName;
+        ResetTotemState();
+        DEFAULT_CHAT_FRAME:AddMessage("Backpacker: Earth totem set to " .. displayName .. ".");
+    else
+        DEFAULT_CHAT_FRAME:AddMessage("Backpacker: Unknown earth totem: " .. totemName);
+    end
+end
+
+local function SetFireTotem(totemName, displayName)
+    if TOTEM_DEFINITIONS[totemName] then
+        settings.FIRE_TOTEM = totemName;
+        BackpackerDB.FIRE_TOTEM = totemName;
+        ResetTotemState();
+        DEFAULT_CHAT_FRAME:AddMessage("Backpacker: Fire totem set to " .. displayName .. ".");
+    else
+        DEFAULT_CHAT_FRAME:AddMessage("Backpacker: Unknown fire totem: " .. totemName);
+    end
+end
+
+local function SetAirTotem(totemName, displayName)
+    if TOTEM_DEFINITIONS[totemName] then
+        settings.AIR_TOTEM = totemName;
+        BackpackerDB.AIR_TOTEM = totemName;
+        ResetTotemState();
+        DEFAULT_CHAT_FRAME:AddMessage("Backpacker: Air totem set to " .. displayName .. ".");
+    else
+        DEFAULT_CHAT_FRAME:AddMessage("Backpacker: Unknown air totem: " .. totemName);
+    end
+end
+
+local function SetWaterTotem(totemName, displayName)
+    if TOTEM_DEFINITIONS[totemName] then
+        settings.WATER_TOTEM = totemName;
+        BackpackerDB.WATER_TOTEM = totemName;
+        ResetTotemState();
+        DEFAULT_CHAT_FRAME:AddMessage("Backpacker: Water totem set to " .. displayName .. ".");
+    else
+        DEFAULT_CHAT_FRAME:AddMessage("Backpacker: Unknown water totem: " .. totemName);
+    end
+end
+
 -- Slash command handlers
 local function ToggleSetting(setting, message)
     settings[setting] = not settings[setting];
@@ -562,10 +679,7 @@ local function SetDownrankAggressiveness(level)
     if level and (level == 0 or level == 1 or level == 2) then
         settings.DOWNRANK_AGGRESSIVENESS = level;
         BackpackerDB.DOWNRANK_AGGRESSIVENESS = level;
-        
-        -- Update chain heal spell based on available ranks and downranking level
         InitializeChainHealSpell();
-        
         DEFAULT_CHAT_FRAME:AddMessage("Backpacker: Downranking aggressiveness set to " .. level .. ".");
     else
         DEFAULT_CHAT_FRAME:AddMessage("Backpacker: Invalid downranking aggressiveness level. Use 0, 1, or 2.");
@@ -579,6 +693,7 @@ local function ToggleStratholmeMode()
         DEFAULT_CHAT_FRAME:AddMessage("Backpacker: Zul'Gurub mode disabled.");
     end
     ToggleSetting("STRATHOLME_MODE", "Stratholme mode");
+    ResetTotemState(); -- Reset totems when mode changes
 end
 
 local function ToggleZulGurubMode()
@@ -588,9 +703,9 @@ local function ToggleZulGurubMode()
         DEFAULT_CHAT_FRAME:AddMessage("Backpacker: Stratholme mode disabled.");
     end
     ToggleSetting("ZG_MODE", "Zul'Gurub mode");
+    ResetTotemState(); -- Reset totems when mode changes
 end
 
--- New function to toggle hybrid mode
 local function ToggleHybridMode()
     ToggleSetting("HYBRID_MODE", "Hybrid mode");
     if settings.HYBRID_MODE then
@@ -604,14 +719,13 @@ local function ToggleHybridMode()
     end
 end
 
--- New function to set totem cast delay
 local function SetTotemCastDelay(delay)
     delay = tonumber(delay);
     if delay and delay >= 0 then
         TOTEM_CAST_DELAY = delay;
         DEFAULT_CHAT_FRAME:AddMessage("Backpacker: Totem cast delay set to " .. delay .. " seconds.");
     else
-        DEFAULT_CHAT_FRAME:AddMessage("Backpacker: Invalid delay. Use a number >= 0 (e.g., 0.5 for 500ms).");
+        DEFAULT_CHAT_FRAME:AddMessage("Backpacker: Invalid delay. Use a number >= 0 (e.g., 0.25 for 250ms).");
     end
 end
 
@@ -625,8 +739,13 @@ local function PrintUsage()
     DEFAULT_CHAT_FRAME:AddMessage("  /bpdr <0, 1, 2> - Set downranking aggressiveness.");
     DEFAULT_CHAT_FRAME:AddMessage("  /bpstrath - Toggle Stratholme mode.");
     DEFAULT_CHAT_FRAME:AddMessage("  /bpzg - Toggle Zul'Gurub mode.");
-    DEFAULT_CHAT_FRAME:AddMessage("  /bphybrid - Toggle Hybrid mode.");  -- New hybrid mode command
-    DEFAULT_CHAT_FRAME:AddMessage("  /bpdelay <seconds> - Set totem cast delay (default: 0.5)");  -- New delay command
+    DEFAULT_CHAT_FRAME:AddMessage("  /bphybrid - Toggle Hybrid mode.");
+    DEFAULT_CHAT_FRAME:AddMessage("  /bpdelay <seconds> - Set totem cast delay (default: 0.25)");
+    DEFAULT_CHAT_FRAME:AddMessage("  TOTEM CUSTOMIZATION:");
+    DEFAULT_CHAT_FRAME:AddMessage("  EARTH: /bpsoe (Strength), /bpss (Stoneskin)");
+    DEFAULT_CHAT_FRAME:AddMessage("  FIRE: /bpft (Flametongue), /bpfrr (Frost Resist)");
+    DEFAULT_CHAT_FRAME:AddMessage("  AIR: /bpwf (Windfury), /bpgoa (Grace of Air), /bpnr (Nature Resist)");
+    DEFAULT_CHAT_FRAME:AddMessage("  WATER: /bpms (Mana Spring), /bphs (Healing Stream), /bpfr (Fire Resist)");
     DEFAULT_CHAT_FRAME:AddMessage("  /bp or /backpacker - Show usage information.");
 end
 
@@ -639,8 +758,24 @@ SLASH_BPCHAINHEAL1 = "/bpchainheal"; SlashCmdList["BPCHAINHEAL"] = function() To
 SLASH_BPDR1 = "/bpdr"; SlashCmdList["BPDR"] = SetDownrankAggressiveness;
 SLASH_BPSTRATH1 = "/bpstrath"; SlashCmdList["BPSTRATH"] = ToggleStratholmeMode;
 SLASH_BPZG1 = "/bpzg"; SlashCmdList["BPZG"] = ToggleZulGurubMode;
-SLASH_BPHYBRID1 = "/bphybrid"; SlashCmdList["BPHYBRID"] = ToggleHybridMode;  -- New hybrid mode command
-SLASH_BPDELAY1 = "/bpdelay"; SlashCmdList["BPDELAY"] = SetTotemCastDelay;  -- New delay command
+SLASH_BPHYBRID1 = "/bphybrid"; SlashCmdList["BPHYBRID"] = ToggleHybridMode;
+SLASH_BPDELAY1 = "/bpdelay"; SlashCmdList["BPDELAY"] = SetTotemCastDelay;
+
+-- Totem customization commands
+SLASH_BPSOE1 = "/bpsoe"; SlashCmdList["BPSOE"] = function() SetEarthTotem("Strength of Earth Totem", "Strength of Earth"); end;
+SLASH_BPSS1 = "/bpss"; SlashCmdList["BPSS"] = function() SetEarthTotem("Stoneskin Totem", "Stoneskin"); end;
+
+SLASH_BPFT1 = "/bpft"; SlashCmdList["BPFT"] = function() SetFireTotem("Flametongue Totem", "Flametongue"); end;
+SLASH_BPFRR1 = "/bpfrr"; SlashCmdList["BPFRR"] = function() SetFireTotem("Frost Resistance Totem", "Frost Resistance"); end;
+
+SLASH_BPWF1 = "/bpwf"; SlashCmdList["BPWF"] = function() SetAirTotem("Windfury Totem", "Windfury"); end;
+SLASH_BPGOA1 = "/bpgoa"; SlashCmdList["BPGOA"] = function() SetAirTotem("Grace of Air Totem", "Grace of Air"); end;
+SLASH_BPNR1 = "/bpnr"; SlashCmdList["BPNR"] = function() SetAirTotem("Nature Resistance Totem", "Nature Resistance"); end;
+
+SLASH_BPMS1 = "/bpms"; SlashCmdList["BPMS"] = function() SetWaterTotem("Mana Spring Totem", "Mana Spring"); end;
+SLASH_BPHS1 = "/bphs"; SlashCmdList["BPHS"] = function() SetWaterTotem("Healing Stream Totem", "Healing Stream"); end;
+SLASH_BPFR2 = "/bpfr"; SlashCmdList["BPFR"] = function() SetWaterTotem("Fire Resistance Totem", "Fire Resistance"); end;
+
 SLASH_BP1 = "/bp"; SLASH_BP2 = "/backpacker"; SlashCmdList["BP"] = PrintUsage;
 
 -- Initialize
