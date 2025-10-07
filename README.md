@@ -1,65 +1,88 @@
+# Backpacker - Shaman Automation Suite
+
 This addon was created for backpacking my Shaman in TurtleWow CC2. It assumes you are level 60.
 
-I use this addon by creating a macro for /bpheal bound to mouse wheel up, and a macro for /bpbuff bound to mousewheel down. This way I can have my Warrior window focused and controlled using my keyboard, and my Shamans healing/buffing is controlled by mousing over his window in the background and scroling up/down
+I use this addon by creating a macro for `/bpheal` bound to mouse wheel up, and a macro for `/bpbuff` bound to mousewheel down. This way I can have my Warrior window focused and controlled using my keyboard, and my Shaman's healing/buffing is controlled by mousing over his window in the background and scrolling up/down.
 
-Youtube Demo
+## YouTube Demo
 
 [![Video](https://img.youtube.com/vi/68p6u27n1M0/0.jpg)](https://youtu.be/68p6u27n1M0)
 
-How to Use:
-    Place the Backpacker folder in your Interface/AddOns/ directory.
-    Log in to Turtle WoW.
-    Enable the addon in the character selection screen (click "AddOns" in the bottom left).
+## How to Use:
+- Place the Backpacker folder in your `Interface/AddOns/` directory.
+- Log in to Turtle WoW.
+- Enable the addon in the character selection screen (click "AddOns" in the bottom left).
 
-Backpacker: Usage:
-Explanation of Commands:
+## Features
 
-    /bpheal
+### Smart Healing System (QuickHeal Integration)
+- Uses QuickHeal addon for all healing decisions
+- Automatically decides between single-target heal or chain heal
+- No manual rank selection - QuickHeal handles all healing optimization
+- Hybrid mode: Switches to DPS when healing not needed
 
-        Heals party and raid members based on their health and the addon's settings.
+### Advanced Totem Management
+- **Fully customizable totems** for each element
+- Configurable delay between totem casts
+- Continuous maintenance of all totems (auto-recast if destroyed/expired/out-of-range)
+- Fast totem dropping with local verification flags
+- Independent server buff verification with buffer periods
+- **Smart Totemic Recall** with dual cooldown system
+- Separate Water Shield handling (self-buff, not affected by totem recall)
+- **ZG/Stratholme combat mode**: Spammable cleansing totems for mass dispels
 
-    /bpbuff
+## Backpacker Commands:
 
-        Drops totems based on the current mode (Stratholme, Zul'Gurub, or default).
+### Core Commands
+- `/bpheal` - Heal party and raid members using QuickHeal
+- `/bpbuff` - Drop totems with smart verification system
+- `/bprecall` - Manually cast Totemic Recall (works in combat)
+- `/bpdebug` - Toggle debug messages on/off
+- `/bpfollow` - Toggle follow functionality
+- `/bpchainheal` - Toggle Chain Heal functionality
+- `/bpstrath` - Toggle Stratholme mode (Disease Cleansing Totem)
+- `/bpzg` - Toggle Zul'Gurub mode (Poison Cleansing Totem)
+- `/bphybrid` - Toggle Hybrid mode (lower healing threshold + DPS)
+- `/bpdelay <seconds>` - Set totem cast delay (default: 0.25)
+- `/bp` or `/backpacker` - Show usage information
 
-    /bpdebug
+### Totem Customization Commands
 
-        Toggles debug messages on or off. When enabled, the addon will print additional information to the chat frame.
+#### Earth Totems
+- `/bpsoe` - Strength of Earth Totem
+- `/bpss` - Stoneskin Totem
+- `/bptremor` - Tremor Totem
+- `/bpstoneclaw` - Stoneclaw Totem
+- `/bpearthbind` - Earthbind Totem
 
-    /bpfollow
+#### Fire Totems
+- `/bpft` - Flametongue Totem
+- `/bpfrr` - Frost Resistance Totem
+- `/bpfirenova` - Fire Nova Totem
+- `/bpsearing` - Searing Totem
+- `/bpmagma` - Magma Totem
 
-        Toggles the follow functionality. When enabled, the player will automatically follow the first party member.
+#### Air Totems
+- `/bpwf` - Windfury Totem
+- `/bpgoa` - Grace of Air Totem
+- `/bpnr` - Nature Resistance Totem
+- `/bpgrounding` - Grounding Totem
+- `/bpsentry` - Sentry Totem
+- `/bpwindwall` - Windwall Totem
 
-    /bpchainheal
+#### Water Totems
+- `/bpms` - Mana Spring Totem
+- `/bphs` - Healing Stream Totem
+- `/bpfr` - Fire Resistance Totem
+- `/bppoison` - Poison Cleansing Totem
+- `/bpdisease` - Disease Cleansing Totem
 
-        Toggles the Chain Heal functionality. When enabled, the addon will use Chain Heal if multiple party members are low on health.
+## Important Notes:
 
-    /bpdr <0, 1, 2>
+- **Requires QuickHeal addon** for healing functionality
+- Totem system features intelligent state tracking with both local and server verification
+- Manual Totemic Recall (`/bprecall`) works even in combat for emergency situations
+- In ZG/Stratholme modes, cleansing totems become spammable during combat for mass dispels
+- Hybrid mode automatically adjusts healing threshold and enables DPS rotation when healing isn't needed
 
-        Sets the downranking aggressiveness for healing spells.
-
-            0: Least aggressive downranking.
-
-            1: Moderate downranking.
-
-            2: Most aggressive downranking.
-
-    /bpstrath
-
-        Toggles Stratholme mode. When enabled, the addon will drop a Disease Cleansing Totem instead of a Mana Spring Totem.
-
-    /bpzg
-
-        Toggles Zul'Gurub mode. When enabled, the addon will drop a Poison Cleansing Totem instead of a Mana Spring Totem.
-
-    /bphybrid
-
-        Toggles Hybrid mode. When enabled, the addon will lower the health threshold for healing and allow the player to assist party members by casting offensive spells like Lightning Bolt.
-
-    /bp or /backpacker
-
-        Displays this usage information in the chat frame.
-
-
-The Backpacker addon is a utility tool for Shamans in WoW Classic, automating healing, totem management, and party following. It is highly configurable through slash commands and a configuration file, allowing players to tailor its behavior to their needs. The addon is designed to be user-friendly, with debug messages and usage information available to help players understand and control its functionality.
-New chat
+The Backpacker addon is a comprehensive utility tool for Shamans in WoW Classic, automating healing, advanced totem management, and party following. It is highly configurable through slash commands, allowing players to tailor its behavior to their specific needs and playstyle.
