@@ -1,5 +1,7 @@
 # Backpacker - Shaman Automation Suite
 
+requires superwow https://github.com/balakethelock/SuperWoW
+
 This addon was created for backpacking my Shaman in TurtleWow CC2. It assumes you are level 60.
 
 I use this addon by creating a macro for `/bpheal` bound to mouse wheel up, and a macro for `/bpbuff` bound to mousewheel down. This way I can have my Warrior window focused and controlled using my keyboard, and my Shaman's healing/buffing is controlled by mousing over his window in the background and scrolling up/down.
