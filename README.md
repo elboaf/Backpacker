@@ -10,88 +10,94 @@ I use this addon by creating a macro for `/bpheal` bound to mouse wheel up, and 
 
 [![Video](https://img.youtube.com/vi/68p6u27n1M0/0.jpg)](https://youtu.be/68p6u27n1M0)
 
-## How to Use:
-- Place the Backpacker folder in your `Interface/AddOns/` directory.
-- Log in to Turtle WoW.
-- Enable the addon in the character selection screen (click "AddOns" in the bottom left).
+Core Commands
+Healing & Buffing
+Command	Description
+/bpheal	Heal party/raid members using QuickHeal integration
+/bpbuff	Drop totems (with auto-shield refresh if enabled)
+/bpchainheal	Toggle Chain Heal functionality
+/bprecall	Manually cast Totemic Recall (works in combat)
+/bpreport	Report current totems to party chat
+Debugging
+Command	Description
+/bpdebug	Toggle debug messages
+/bpcheckbuffs	Debug: Show all current buffs with UnitBuff()
+Modes & Settings
+Command	Description
+/bpstrath	Toggle Stratholme mode (uses Disease Cleansing Totem)
+/bpzg	Toggle Zul'Gurub mode (uses Poison Cleansing Totem)
+/bphybrid	Toggle Hybrid mode (heals + DPS)
+/bpfarm	Toggle Farming mode (auto-switches Water/Earth Shield)
+/bpdelay <seconds>	Set totem cast delay (default: 0.25)
+Follow System
+Command	Description
+/bpf	Toggle follow functionality
+/bpl	Set follow target to current target
+Pet Healing
+Command	Description
+/bppets	Toggle Pet Healing mode
+Shield Management
+Shield Types (Mutually Exclusive)
+Command	Alias	Description
+/bpwatershield	/bpws	Use Water Shield
+/bplightningshield	/bpls	Use Lightning Shield
+/bpearthshield	/bpes	Use Earth Shield
+Shield Auto-Refresh
+Command	Description
+/bpauto	Toggle Shield auto-refresh mode
+Totem Customization
+Earth Totems
+Command	Totem Set
+/bpsoe	Strength of Earth Totem
+/bpss	Stoneskin Totem
+/bptremor	Tremor Totem
+/bpstoneclaw	Stoneclaw Totem
+/bpearthbind	Earthbind Totem
+Fire Totems
+Command	Totem Set
+/bpft	Flametongue Totem
+/bpfrr	Frost Resistance Totem
+/bpfirenova	Fire Nova Totem
+/bpsearing	Searing Totem
+/bpmagma	Magma Totem
+Air Totems
+Command	Totem Set
+/bpwf	Windfury Totem
+/bpgoa	Grace of Air Totem
+/bpnr	Nature Resistance Totem
+/bpgrounding	Grounding Totem
+/bpsentry	Sentry Totem
+/bpwindwall	Windwall Totem
+Water Totems
+Command	Totem Set
+/bpms	Mana Spring Totem
+/bphs	Healing Stream Totem
+/bpfr	Fire Resistance Totem
+/bppoison	Poison Cleansing Totem
+/bpdisease	Disease Cleansing Totem
+Help & Information
+Command	Description
+/bp	Show usage information
+/backpacker	Same as /bp
+Key Notes
 
-## Features
+    QuickHeal Integration: Healing commands require the QuickHeal addon
 
-### Smart Healing System (QuickHeal Integration)
-- Uses QuickHeal addon for all healing decisions
-- Automatically decides between single-target heal or chain heal
-- No manual rank selection - QuickHeal handles all healing optimization
-- Hybrid mode: Switches to DPS when healing not needed
-- **Ancestral Fishing mode**: Casts rank 1 Healing Wave when no healing needed (out of combat)
+    Farming Mode: Automatically switches between Water Shield and Earth Shield based on health:mana ratio
 
-### Advanced Totem Management
-- **Fully customizable totems** for each element
-- Configurable delay between totem casts
-- Continuous maintenance of all totems (auto-recast if destroyed/expired/out-of-range)
-- Fast totem dropping with local verification flags
-- Independent server buff verification with buffer periods
-- **Smart Totemic Recall** with dual cooldown system
-- Separate Water Shield handling (self-buff, not affected by totem recall)
-- **ZG/Stratholme combat mode**: Spammable cleansing totems for mass dispels
-- **New totem order**: Air → Fire → Earth → Water
+    Auto-Refresh: When enabled, /bpbuff automatically refreshes shields when charges are low
 
-## Backpacker Commands:
+    Special Modes: Stratholme and ZG modes override water totem settings
 
-### Core Commands
-- `/bpheal` - Heal party and raid members using QuickHeal
-- `/bpbuff` - Drop totems with smart verification system
-- `/bprecall` - Manually cast Totemic Recall (works in combat)
-- `/bpdebug` - Toggle debug messages on/off
-- `/bpf` - Toggle follow functionality
-- `/bpl` - Set follow target to current target
-- `/bpchainheal` - Toggle Chain Heal functionality
-- `/bpstrath` - Toggle Stratholme mode (Disease Cleansing Totem)
-- `/bpzg` - Toggle Zul'Gurub mode (Poison Cleansing Totem)
-- `/bphybrid` - Toggle Hybrid mode (lower healing threshold + DPS)
-- `/bpdelay <seconds>` - Set totem cast delay (default: 0.35)
-- `/bpfishing` - Toggle Ancestral Fishing mode
-- `/bp` or `/backpacker` - Show usage information
+    Totem Reporting: /bpreport sends a clean list of your current totems to party chat
 
-### Totem Customization Commands
+Usage Tips
 
-#### Earth Totems
-- `/bpsoe` - Strength of Earth Totem
-- `/bpss` - Stoneskin Totem
-- `/bptremor` - Tremor Totem
-- `/bpstoneclaw` - Stoneclaw Totem
-- `/bpearthbind` - Earthbind Totem
+    Run /bp anytime to see all available commands
 
-#### Fire Totems
-- `/bpft` - Flametongue Totem
-- `/bpfrr` - Frost Resistance Totem
-- `/bpfirenova` - Fire Nova Totem
-- `/bpsearing` - Searing Totem
-- `/bpmagma` - Magma Totem
+    Shield types are mutually exclusive - setting one disables others
 
-#### Air Totems
-- `/bpwf` - Windfury Totem
-- `/bpgoa` - Grace of Air Totem
-- `/bpnr` - Nature Resistance Totem
-- `/bpgrounding` - Grounding Totem
-- `/bpsentry` - Sentry Totem
-- `/bpwindwall` - Windwall Totem
+    Farming mode automatically disables auto-refresh mode
 
-#### Water Totems
-- `/bpms` - Mana Spring Totem
-- `/bphs` - Healing Stream Totem
-- `/bpfr` - Fire Resistance Totem
-- `/bppoison` - Poison Cleansing Totem
-- `/bpdisease` - Disease Cleansing Totem
-
-## Important Notes:
-
-- **Requires QuickHeal addon** for healing functionality
-- Totem system features intelligent state tracking with both local and server verification
-- **Manual Totemic Recall (`/bprecall`) works even in combat** for emergency situations
-- In ZG/Stratholme modes, cleansing totems become spammable during combat for mass dispels
-- Hybrid mode automatically adjusts healing threshold and enables DPS rotation when healing isn't needed
-- **Ancestral Fishing mode** casts Healing Wave (Rank 1) on your follow target when no healing is needed (out of combat only)
-- **New totem casting order**: Air → Fire → Earth → Water for optimal performance
-- Default totem cast delay is now 0.35 seconds for better server synchronization
-
+    Manual recall (/bprecall) works even in combat
 The Backpacker addon is a comprehensive utility tool for Shamans in WoW Classic, automating healing, advanced totem management, and party following. It is highly configurable through slash commands, allowing players to tailor its behavior to their specific needs and playstyle.
