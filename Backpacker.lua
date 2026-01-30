@@ -906,7 +906,7 @@ local function HealPartyMembers()
             for i = 1, numRaidMembers do
                 local petUnit = "raidpet" .. i;
                 if UnitExists(petUnit) and not UnitIsDeadOrGhost(petUnit) then
-                    local healthPercent = (UnitHealth(petUnit) / UnitManaMax(petUnit)) * 100;
+                    local healthPercent = (UnitHealth(petUnit) / UnitHealthMax(petUnit)) * 100;
                     PrintMessage("Checking health of raid pet " .. i .. ": " .. healthPercent .. "%");
                     if healthPercent < settings.HEALTH_THRESHOLD then
                         table.insert(lowHealthMembers, petUnit);
