@@ -1,5 +1,5 @@
 -- Backpacker.lua
--- Main script for Backpacker addon with SuperWoW totem detection
+-- Main script for Backpacker addon with SuperWoW totem detection and range checking
 
 -- SavedVariables table
 BackpackerDB = BackpackerDB or {
@@ -84,10 +84,18 @@ for name, id in pairs(SPELL_ID_LOOKUP) do
     SPELL_NAME_BY_ID[id] = name;
 end
 
--- SUPERWOW TOTEM DETECTION - Based on the example
+-- SUPERWOW TOTEM DETECTION
 local superwowEnabled = SUPERWOW_VERSION and true or false
-local ourTotemGUIDs = {}  -- Track our totem GUIDs
 local totemUnitIds = {}   -- Map element to unitId
+local totemPositions = {   -- Track where totems were placed
+    air = nil,
+    fire = nil,
+    earth = nil,
+    water = nil
+}
+local RANGE_CHECK_INTERVAL = 2.0 -- Check every 2 seconds
+local lastRangeCheckTime = 0
+local TOTEM_RANGE = 30 -- yards
 
 -- Fallback buff checking function (for non-SuperWoW)
 local function HasBuff(buffName, unit)
@@ -110,6 +118,12 @@ local function HasBuff(buffName, unit)
         end
     end
     return false;
+end
+
+-- Calculate distance between two sets of coordinates
+local function GetDistance(x1, y1, x2, y2)
+    if not x1 or not y1 or not x2 or not y2 then return nil end
+    return sqrt((x2 - x1)^2 + (y2 - y1)^2)
 end
 
 -- Totem definitions
@@ -189,7 +203,6 @@ local function InitializeTotemState()
             locallyVerified = false, 
             serverVerified = false, 
             localVerifyTime = 0,
-            guid = nil,
             unitId = nil
         },
         { 
@@ -199,7 +212,6 @@ local function InitializeTotemState()
             locallyVerified = false, 
             serverVerified = false, 
             localVerifyTime = 0,
-            guid = nil,
             unitId = nil
         },
         { 
@@ -209,7 +221,6 @@ local function InitializeTotemState()
             locallyVerified = false, 
             serverVerified = false, 
             localVerifyTime = 0,
-            guid = nil,
             unitId = nil
         },
         { 
@@ -219,7 +230,6 @@ local function InitializeTotemState()
             locallyVerified = false, 
             serverVerified = false, 
             localVerifyTime = 0,
-            guid = nil,
             unitId = nil
         },
     };
@@ -227,7 +237,7 @@ end
 
 local totemState = InitializeTotemState();
 
--- SUPERWOW EVENT HANDLER - Exactly from the example
+-- SUPERWOW EVENT HANDLER - With position tracking
 local swFrame = CreateFrame("Frame")
 swFrame:RegisterEvent("UNIT_MODEL_CHANGED")
 swFrame:SetScript("OnEvent", function()
@@ -246,6 +256,9 @@ swFrame:SetScript("OnEvent", function()
             DEFAULT_CHAT_FRAME:AddMessage("Backpacker: SuperWoW detected our totem: " .. unitName, 0, 1, 0)
         end
         
+        -- Get totem position
+        local tx, ty = UnitPosition(unitId)
+        
         -- Try to match this totem to an element
         for i, totem in ipairs(totemState) do
             if totem.locallyVerified and not totem.serverVerified then
@@ -254,6 +267,11 @@ swFrame:SetScript("OnEvent", function()
                 if expectedName and string.find(unitName, expectedName, 1, true) then
                     totemState[i].serverVerified = true
                     totemState[i].unitId = unitId
+                    -- Store the position
+                    if tx and ty then
+                        totemPositions[totem.element] = { x = tx, y = ty }
+                        PrintMessage(totem.element .. " totem position saved: " .. math.floor(tx) .. "," .. math.floor(ty))
+                    end
                     if settings.DEBUG_MODE then
                         DEFAULT_CHAT_FRAME:AddMessage("Backpacker: Matched " .. totem.element .. " totem via SuperWoW", 0, 1, 0)
                     end
@@ -264,16 +282,6 @@ swFrame:SetScript("OnEvent", function()
     end
 end)
 
--- Helper function to get element from spell ID (for cast events if needed)
-local function GetElementFromSpellId(spellId)
-    for totemName, def in pairs(TOTEM_DEFINITIONS) do
-        if def.spellId and def.spellId == spellId then
-            return def.element
-        end
-    end
-    return nil
-end
-
 -- Helper function to get totem index by element
 local function GetTotemIndexByElement(element)
     for i, totem in ipairs(totemState) do
@@ -282,6 +290,51 @@ local function GetTotemIndexByElement(element)
         end
     end
     return nil
+end
+
+-- Check if any totems are out of range
+local function CheckTotemRange()
+    if not superwowEnabled then return false end
+    
+    local currentTime = GetTime()
+    if currentTime - lastRangeCheckTime < RANGE_CHECK_INTERVAL then
+        return false
+    end
+    lastRangeCheckTime = currentTime
+    
+    -- Get player position
+    local px, py = UnitPosition("player")
+    if not px or not py then return false end
+    
+    local outOfRange = false
+    
+    -- Check each totem that has a position
+    for element, pos in pairs(totemPositions) do
+        if pos and pos.x and pos.y then
+            local dist = GetDistance(px, py, pos.x, pos.y)
+            if dist and dist > TOTEM_RANGE then
+                PrintMessage(element .. " totem out of range (" .. math.floor(dist) .. " yards)")
+                
+                -- Find and reset this totem
+                for i, totem in ipairs(totemState) do
+                    if totem.element == element then
+                        totemState[i].locallyVerified = false
+                        totemState[i].serverVerified = false
+                        totemState[i].unitId = nil
+                        totemPositions[element] = nil
+                        outOfRange = true
+                        break
+                    end
+                end
+            end
+        end
+    end
+    
+    if outOfRange then
+        DEFAULT_CHAT_FRAME:AddMessage("Totems: OUT OF RANGE - redropping", 1, 0.5, 0)
+    end
+    
+    return outOfRange
 end
 
 -- SHIELD FUNCTIONS
@@ -425,10 +478,9 @@ local function ResetTotemState()
         totemState[i].locallyVerified = false;
         totemState[i].serverVerified = false;
         totemState[i].localVerifyTime = 0;
-        totemState[i].guid = nil;
         totemState[i].unitId = nil;
     end
-    ourTotemGUIDs = {}
+    totemPositions = { air = nil, fire = nil, earth = nil, water = nil }
     lastAllTotemsActiveTime = 0;
     PrintMessage("Totem state reset.");
 end
@@ -436,6 +488,13 @@ end
 -- MAIN TOTEM FUNCTION
 local function DropTotems()
     local currentTime = GetTime();
+    
+    -- Check if any totems are out of range
+    if superwowEnabled and CheckTotemRange() then
+        -- If we found out-of-range totems, reset the recall timer
+        lastAllTotemsActiveTime = 0
+        -- Continue with normal totem dropping
+    end
     
     if CheckAndRefreshShield() then
         return;
@@ -521,8 +580,8 @@ local function DropTotems()
                     totemState[i].locallyVerified = false;
                     totemState[i].serverVerified = false;
                     totemState[i].localVerifyTime = 0;
-                    totemState[i].guid = nil;
                     totemState[i].unitId = nil;
+                    totemPositions.water = nil;
                     PrintMessage("COMBAT: Preparing " .. cleansingTotemSpell .. " for mass dispel.");
                     break;
                 end
@@ -547,6 +606,7 @@ local function DropTotems()
                     totemState[i].serverVerified = false;
                     totemState[i].locallyVerified = false;
                     totemState[i].unitId = nil;
+                    totemPositions[totem.element] = nil;
                     hadExpiredTotems = true;
                 else
                     -- Double-check it still belongs to us
@@ -555,6 +615,7 @@ local function DropTotems()
                         totemState[i].serverVerified = false;
                         totemState[i].locallyVerified = false;
                         totemState[i].unitId = nil;
+                        totemPositions[totem.element] = nil;
                         hadExpiredTotems = true;
                     end
                 end
@@ -563,6 +624,7 @@ local function DropTotems()
                 PrintMessage(totem.element .. " has no unitId - resetting");
                 totemState[i].serverVerified = false;
                 totemState[i].locallyVerified = false;
+                totemPositions[totem.element] = nil;
                 hadExpiredTotems = true;
             end
         end
@@ -613,6 +675,8 @@ local function DropTotems()
             PrintMessage("Casting " .. totem.spell .. " (forced recast for cleanse pulse).");
             totemState[i].locallyVerified = true;
             totemState[i].localVerifyTime = currentTime;
+            totemState[i].unitId = nil;
+            totemPositions.water = nil;
             lastTotemCastTime = currentTime;
             return;
         elseif not totem.locallyVerified then
@@ -625,10 +689,26 @@ local function DropTotems()
                 PrintMessage("Casting " .. totem.spell .. ".");
                 totemState[i].locallyVerified = true;
                 totemState[i].localVerifyTime = currentTime;
+                totemState[i].unitId = nil; -- Clear old unitId, waiting for new one
+                totemPositions[totem.element] = nil; -- Clear old position
                 lastTotemCastTime = currentTime;
                 return;
             end
         end
+    end
+
+    -- Check if all totems are locally verified
+    local allLocallyVerified = true;
+    for i, totem in ipairs(totemState) do
+        if not totem.locallyVerified then
+            allLocallyVerified = false;
+            break;
+        end
+    end
+
+    if allLocallyVerified and lastAllTotemsActiveTime == 0 then
+        DEFAULT_CHAT_FRAME:AddMessage("Totems: Pending", 1, 0.5, 0);
+        PrintMessage("All totems locally verified. Waiting for confirmation...");
     end
 
     -- PHASE 3: Verify totems
@@ -655,6 +735,7 @@ local function DropTotems()
                         totemState[i].serverVerified = false
                         totemState[i].locallyVerified = false
                         totemState[i].localVerifyTime = 0
+                        totemPositions[totem.element] = nil
                         allServerVerified = false
                         needsFastDropRestart = true
                     end
@@ -667,6 +748,7 @@ local function DropTotems()
                         totemState[i].serverVerified = false;
                         totemState[i].localVerifyTime = 0;
                         totemState[i].unitId = nil;
+                        totemPositions[totem.element] = nil;
                         allServerVerified = false;
                         needsFastDropRestart = true;
                     else
@@ -935,8 +1017,8 @@ local function SetEarthTotem(totemName, displayName)
                 totemState[i].locallyVerified = false;
                 totemState[i].serverVerified = false;
                 totemState[i].localVerifyTime = 0;
-                totemState[i].guid = nil;
                 totemState[i].unitId = nil;
+                totemPositions.earth = nil;
                 break;
             end
         end
@@ -959,8 +1041,8 @@ local function SetFireTotem(totemName, displayName)
                 totemState[i].locallyVerified = false;
                 totemState[i].serverVerified = false;
                 totemState[i].localVerifyTime = 0;
-                totemState[i].guid = nil;
                 totemState[i].unitId = nil;
+                totemPositions.fire = nil;
                 break;
             end
         end
@@ -983,8 +1065,8 @@ local function SetAirTotem(totemName, displayName)
                 totemState[i].locallyVerified = false;
                 totemState[i].serverVerified = false;
                 totemState[i].localVerifyTime = 0;
-                totemState[i].guid = nil;
                 totemState[i].unitId = nil;
+                totemPositions.air = nil;
                 break;
             end
         end
@@ -1007,8 +1089,8 @@ local function SetWaterTotem(totemName, displayName)
                 totemState[i].locallyVerified = false;
                 totemState[i].serverVerified = false;
                 totemState[i].localVerifyTime = 0;
-                totemState[i].guid = nil;
                 totemState[i].unitId = nil;
+                totemPositions.water = nil;
                 break;
             end
         end
@@ -1237,6 +1319,29 @@ SlashCmdList["BPCHECKSUPERWOW"] = function()
     end
 end;
 
+SLASH_BPTOTEMPOS1 = "/bptotempos";
+SlashCmdList["BPTOTEMPOS"] = function()
+    DEFAULT_CHAT_FRAME:AddMessage("=== Totem Positions ===");
+    local px, py = UnitPosition("player")
+    if px and py then
+        DEFAULT_CHAT_FRAME:AddMessage("Player: " .. math.floor(px) .. "," .. math.floor(py))
+    end
+    
+    for element, pos in pairs(totemPositions) do
+        if pos and pos.x and pos.y then
+            local dist = GetDistance(px, py, pos.x, pos.y)
+            local status = "In range"
+            if dist and dist > TOTEM_RANGE then
+                status = "OUT OF RANGE"
+            end
+            DEFAULT_CHAT_FRAME:AddMessage(string.format("%s: %d,%d (%.1f yds) - %s", 
+                element, math.floor(pos.x), math.floor(pos.y), dist or 0, status))
+        else
+            DEFAULT_CHAT_FRAME:AddMessage(element .. ": No position data")
+        end
+    end
+end;
+
 SLASH_BPCHECKBUFFS1 = "/bpcheckbuffs";
 SlashCmdList["BPCHECKBUFFS"] = function()
     DEFAULT_CHAT_FRAME:AddMessage("=== Checking buffs with UnitBuff() ===");
@@ -1250,6 +1355,348 @@ SlashCmdList["BPCHECKBUFFS"] = function()
         DEFAULT_CHAT_FRAME:AddMessage(string.format("#%d: ID=%d, Name=%s, Texture=%s", i, spellId or 0, buffName, texture));
     end
 end;
+
+-- MANUAL TOTEM CAST COMMANDS - EVERY TOTEM
+
+-- EARTH TOTEMS
+SLASH_BPSOECAST1 = "/bpsoe-cast";
+SlashCmdList["BPSOECAST"] = function()
+    CastSpellByName("Strength of Earth Totem")
+    for i, totem in ipairs(totemState) do
+        if totem.element == "earth" then
+            totemState[i].locallyVerified = true
+            totemState[i].localVerifyTime = GetTime()
+            totemState[i].serverVerified = false
+            totemState[i].unitId = nil
+            totemPositions.earth = nil
+            DEFAULT_CHAT_FRAME:AddMessage("Backpacker: Manual Strength of Earth Totem cast - awaiting detection", 1, 1, 0)
+            break
+        end
+    end
+end
+
+SLASH_BPSSCAST1 = "/bpss-cast";
+SlashCmdList["BPSSCAST"] = function()
+    CastSpellByName("Stoneskin Totem")
+    for i, totem in ipairs(totemState) do
+        if totem.element == "earth" then
+            totemState[i].locallyVerified = true
+            totemState[i].localVerifyTime = GetTime()
+            totemState[i].serverVerified = false
+            totemState[i].unitId = nil
+            totemPositions.earth = nil
+            DEFAULT_CHAT_FRAME:AddMessage("Backpacker: Manual Stoneskin Totem cast - awaiting detection", 1, 1, 0)
+            break
+        end
+    end
+end
+
+SLASH_BPTREMORCAST1 = "/bptremor-cast";
+SlashCmdList["BPTREMORCAST"] = function()
+    CastSpellByName("Tremor Totem")
+    for i, totem in ipairs(totemState) do
+        if totem.element == "earth" then
+            totemState[i].locallyVerified = true
+            totemState[i].localVerifyTime = GetTime()
+            totemState[i].serverVerified = false
+            totemState[i].unitId = nil
+            totemPositions.earth = nil
+            DEFAULT_CHAT_FRAME:AddMessage("Backpacker: Manual Tremor Totem cast - awaiting detection", 1, 1, 0)
+            break
+        end
+    end
+end
+
+SLASH_BPSTONECLAWCAST1 = "/bpstoneclaw-cast";
+SlashCmdList["BPSTONECLAWCAST"] = function()
+    CastSpellByName("Stoneclaw Totem")
+    for i, totem in ipairs(totemState) do
+        if totem.element == "earth" then
+            totemState[i].locallyVerified = true
+            totemState[i].localVerifyTime = GetTime()
+            totemState[i].serverVerified = false
+            totemState[i].unitId = nil
+            totemPositions.earth = nil
+            DEFAULT_CHAT_FRAME:AddMessage("Backpacker: Manual Stoneclaw Totem cast - awaiting detection", 1, 1, 0)
+            break
+        end
+    end
+end
+
+SLASH_BPEARTHBINDCAST1 = "/bpearthbind-cast";
+SlashCmdList["BPEARTHBINDCAST"] = function()
+    CastSpellByName("Earthbind Totem")
+    for i, totem in ipairs(totemState) do
+        if totem.element == "earth" then
+            totemState[i].locallyVerified = true
+            totemState[i].localVerifyTime = GetTime()
+            totemState[i].serverVerified = false
+            totemState[i].unitId = nil
+            totemPositions.earth = nil
+            DEFAULT_CHAT_FRAME:AddMessage("Backpacker: Manual Earthbind Totem cast - awaiting detection", 1, 1, 0)
+            break
+        end
+    end
+end
+
+-- FIRE TOTEMS
+SLASH_BPFTCAST1 = "/bpft-cast";
+SlashCmdList["BPFTCAST"] = function()
+    CastSpellByName("Flametongue Totem")
+    for i, totem in ipairs(totemState) do
+        if totem.element == "fire" then
+            totemState[i].locallyVerified = true
+            totemState[i].localVerifyTime = GetTime()
+            totemState[i].serverVerified = false
+            totemState[i].unitId = nil
+            totemPositions.fire = nil
+            DEFAULT_CHAT_FRAME:AddMessage("Backpacker: Manual Flametongue Totem cast - awaiting detection", 1, 1, 0)
+            break
+        end
+    end
+end
+
+SLASH_BPFRRCAST1 = "/bpfrr-cast";
+SlashCmdList["BPFRRCAST"] = function()
+    CastSpellByName("Frost Resistance Totem")
+    for i, totem in ipairs(totemState) do
+        if totem.element == "fire" then
+            totemState[i].locallyVerified = true
+            totemState[i].localVerifyTime = GetTime()
+            totemState[i].serverVerified = false
+            totemState[i].unitId = nil
+            totemPositions.fire = nil
+            DEFAULT_CHAT_FRAME:AddMessage("Backpacker: Manual Frost Resistance Totem cast - awaiting detection", 1, 1, 0)
+            break
+        end
+    end
+end
+
+SLASH_BPFIRENOVACAST1 = "/bpfirenova-cast";
+SlashCmdList["BPFIRENOVACAST"] = function()
+    CastSpellByName("Fire Nova Totem")
+    for i, totem in ipairs(totemState) do
+        if totem.element == "fire" then
+            totemState[i].locallyVerified = true
+            totemState[i].localVerifyTime = GetTime()
+            totemState[i].serverVerified = false
+            totemState[i].unitId = nil
+            totemPositions.fire = nil
+            DEFAULT_CHAT_FRAME:AddMessage("Backpacker: Manual Fire Nova Totem cast - awaiting detection", 1, 1, 0)
+            break
+        end
+    end
+end
+
+SLASH_BPSEARINGCAST1 = "/bpsearing-cast";
+SlashCmdList["BPSEARINGCAST"] = function()
+    CastSpellByName("Searing Totem")
+    for i, totem in ipairs(totemState) do
+        if totem.element == "fire" then
+            totemState[i].locallyVerified = true
+            totemState[i].localVerifyTime = GetTime()
+            totemState[i].serverVerified = false
+            totemState[i].unitId = nil
+            totemPositions.fire = nil
+            DEFAULT_CHAT_FRAME:AddMessage("Backpacker: Manual Searing Totem cast - awaiting detection", 1, 1, 0)
+            break
+        end
+    end
+end
+
+SLASH_BPMAGMACAST1 = "/bpmagma-cast";
+SlashCmdList["BPMAGMACAST"] = function()
+    CastSpellByName("Magma Totem")
+    for i, totem in ipairs(totemState) do
+        if totem.element == "fire" then
+            totemState[i].locallyVerified = true
+            totemState[i].localVerifyTime = GetTime()
+            totemState[i].serverVerified = false
+            totemState[i].unitId = nil
+            totemPositions.fire = nil
+            DEFAULT_CHAT_FRAME:AddMessage("Backpacker: Manual Magma Totem cast - awaiting detection", 1, 1, 0)
+            break
+        end
+    end
+end
+
+-- AIR TOTEMS
+SLASH_BPWFCAST1 = "/bpwf-cast";
+SlashCmdList["BPWFCAST"] = function()
+    CastSpellByName("Windfury Totem")
+    for i, totem in ipairs(totemState) do
+        if totem.element == "air" then
+            totemState[i].locallyVerified = true
+            totemState[i].localVerifyTime = GetTime()
+            totemState[i].serverVerified = false
+            totemState[i].unitId = nil
+            totemPositions.air = nil
+            DEFAULT_CHAT_FRAME:AddMessage("Backpacker: Manual Windfury Totem cast - awaiting detection", 1, 1, 0)
+            break
+        end
+    end
+end
+
+SLASH_BPGOACAST1 = "/bpgoa-cast";
+SlashCmdList["BPGOACAST"] = function()
+    CastSpellByName("Grace of Air Totem")
+    for i, totem in ipairs(totemState) do
+        if totem.element == "air" then
+            totemState[i].locallyVerified = true
+            totemState[i].localVerifyTime = GetTime()
+            totemState[i].serverVerified = false
+            totemState[i].unitId = nil
+            totemPositions.air = nil
+            DEFAULT_CHAT_FRAME:AddMessage("Backpacker: Manual Grace of Air Totem cast - awaiting detection", 1, 1, 0)
+            break
+        end
+    end
+end
+
+SLASH_BPNRCAST1 = "/bpnr-cast";
+SlashCmdList["BPNRCAST"] = function()
+    CastSpellByName("Nature Resistance Totem")
+    for i, totem in ipairs(totemState) do
+        if totem.element == "air" then
+            totemState[i].locallyVerified = true
+            totemState[i].localVerifyTime = GetTime()
+            totemState[i].serverVerified = false
+            totemState[i].unitId = nil
+            totemPositions.air = nil
+            DEFAULT_CHAT_FRAME:AddMessage("Backpacker: Manual Nature Resistance Totem cast - awaiting detection", 1, 1, 0)
+            break
+        end
+    end
+end
+
+SLASH_BPGROUNDINGCAST1 = "/bpgrounding-cast";
+SlashCmdList["BPGROUNDINGCAST"] = function()
+    CastSpellByName("Grounding Totem")
+    for i, totem in ipairs(totemState) do
+        if totem.element == "air" then
+            totemState[i].locallyVerified = true
+            totemState[i].localVerifyTime = GetTime()
+            totemState[i].serverVerified = false
+            totemState[i].unitId = nil
+            totemPositions.air = nil
+            DEFAULT_CHAT_FRAME:AddMessage("Backpacker: Manual Grounding Totem cast - awaiting detection", 1, 1, 0)
+            break
+        end
+    end
+end
+
+SLASH_BPSENTRYCAST1 = "/bpsentry-cast";
+SlashCmdList["BPSENTRYCAST"] = function()
+    CastSpellByName("Sentry Totem")
+    for i, totem in ipairs(totemState) do
+        if totem.element == "air" then
+            totemState[i].locallyVerified = true
+            totemState[i].localVerifyTime = GetTime()
+            totemState[i].serverVerified = false
+            totemState[i].unitId = nil
+            totemPositions.air = nil
+            DEFAULT_CHAT_FRAME:AddMessage("Backpacker: Manual Sentry Totem cast - awaiting detection", 1, 1, 0)
+            break
+        end
+    end
+end
+
+SLASH_BPWINDWALLCAST1 = "/bpwindwall-cast";
+SlashCmdList["BPWINDWALLCAST"] = function()
+    CastSpellByName("Windwall Totem")
+    for i, totem in ipairs(totemState) do
+        if totem.element == "air" then
+            totemState[i].locallyVerified = true
+            totemState[i].localVerifyTime = GetTime()
+            totemState[i].serverVerified = false
+            totemState[i].unitId = nil
+            totemPositions.air = nil
+            DEFAULT_CHAT_FRAME:AddMessage("Backpacker: Manual Windwall Totem cast - awaiting detection", 1, 1, 0)
+            break
+        end
+    end
+end
+
+-- WATER TOTEMS
+SLASH_BPMSCAST1 = "/bpms-cast";
+SlashCmdList["BPMSCAST"] = function()
+    CastSpellByName("Mana Spring Totem")
+    for i, totem in ipairs(totemState) do
+        if totem.element == "water" then
+            totemState[i].locallyVerified = true
+            totemState[i].localVerifyTime = GetTime()
+            totemState[i].serverVerified = false
+            totemState[i].unitId = nil
+            totemPositions.water = nil
+            DEFAULT_CHAT_FRAME:AddMessage("Backpacker: Manual Mana Spring Totem cast - awaiting detection", 1, 1, 0)
+            break
+        end
+    end
+end
+
+SLASH_BPHSCAST1 = "/bphs-cast";
+SlashCmdList["BPHSCAST"] = function()
+    CastSpellByName("Healing Stream Totem")
+    for i, totem in ipairs(totemState) do
+        if totem.element == "water" then
+            totemState[i].locallyVerified = true
+            totemState[i].localVerifyTime = GetTime()
+            totemState[i].serverVerified = false
+            totemState[i].unitId = nil
+            totemPositions.water = nil
+            DEFAULT_CHAT_FRAME:AddMessage("Backpacker: Manual Healing Stream Totem cast - awaiting detection", 1, 1, 0)
+            break
+        end
+    end
+end
+
+SLASH_BPFRCAST1 = "/bpfr-cast";
+SlashCmdList["BPFRCAST"] = function()
+    CastSpellByName("Fire Resistance Totem")
+    for i, totem in ipairs(totemState) do
+        if totem.element == "water" then
+            totemState[i].locallyVerified = true
+            totemState[i].localVerifyTime = GetTime()
+            totemState[i].serverVerified = false
+            totemState[i].unitId = nil
+            totemPositions.water = nil
+            DEFAULT_CHAT_FRAME:AddMessage("Backpacker: Manual Fire Resistance Totem cast - awaiting detection", 1, 1, 0)
+            break
+        end
+    end
+end
+
+SLASH_BPPOISONCAST1 = "/bppoison-cast";
+SlashCmdList["BPPOISONCAST"] = function()
+    CastSpellByName("Poison Cleansing Totem")
+    for i, totem in ipairs(totemState) do
+        if totem.element == "water" then
+            totemState[i].locallyVerified = true
+            totemState[i].localVerifyTime = GetTime()
+            totemState[i].serverVerified = false
+            totemState[i].unitId = nil
+            totemPositions.water = nil
+            DEFAULT_CHAT_FRAME:AddMessage("Backpacker: Manual Poison Cleansing Totem cast - awaiting detection", 1, 1, 0)
+            break
+        end
+    end
+end
+
+SLASH_BPDISEASECAST1 = "/bpdisease-cast";
+SlashCmdList["BPDISEASECAST"] = function()
+    CastSpellByName("Disease Cleansing Totem")
+    for i, totem in ipairs(totemState) do
+        if totem.element == "water" then
+            totemState[i].locallyVerified = true
+            totemState[i].localVerifyTime = GetTime()
+            totemState[i].serverVerified = false
+            totemState[i].unitId = nil
+            totemPositions.water = nil
+            DEFAULT_CHAT_FRAME:AddMessage("Backpacker: Manual Disease Cleansing Totem cast - awaiting detection", 1, 1, 0)
+            break
+        end
+    end
+end
 
 -- USAGE INFORMATION
 local function PrintUsage()
@@ -1273,13 +1720,19 @@ local function PrintUsage()
     DEFAULT_CHAT_FRAME:AddMessage("    /bpearthshield - Use Earth Shield");
     DEFAULT_CHAT_FRAME:AddMessage("  /bpfarm - Toggle Farming mode.");
     DEFAULT_CHAT_FRAME:AddMessage("  /bpreport - Report current totems to party chat.");
+    DEFAULT_CHAT_FRAME:AddMessage("  /bptotempos - Show totem positions and range status");
     DEFAULT_CHAT_FRAME:AddMessage("  /bpcheckbuffs - Debug: Show all current buffs");
     DEFAULT_CHAT_FRAME:AddMessage("  /bpchecksw - Debug: Show SuperWoW status");
     DEFAULT_CHAT_FRAME:AddMessage("  TOTEM CUSTOMIZATION:");
-    DEFAULT_CHAT_FRAME:AddMessage("  EARTH: /bpsoe (Strength), /bpss (Stoneskin), /bptremor, /bpstoneclaw, /bpearthbind");
-    DEFAULT_CHAT_FRAME:AddMessage("  FIRE: /bpft (Flametongue), /bpfrr (Frost Resist), /bpfirenova, /bpsearing, /bpmagma");
-    DEFAULT_CHAT_FRAME:AddMessage("  AIR: /bpwf (Windfury), /bpgoa (Grace of Air), /bpnr (Nature Resist), /bpgrounding, /bpsentry, /bpwindwall");
-    DEFAULT_CHAT_FRAME:AddMessage("  WATER: /bpms (Mana Spring), /bphs (Healing Stream), /bpfr (Fire Resist), /bppoison, /bpdisease");
+    DEFAULT_CHAT_FRAME:AddMessage("    EARTH: /bpsoe, /bpss, /bptremor, /bpstoneclaw, /bpearthbind");
+    DEFAULT_CHAT_FRAME:AddMessage("    FIRE: /bpft, /bpfrr, /bpfirenova, /bpsearing, /bpmagma");
+    DEFAULT_CHAT_FRAME:AddMessage("    AIR: /bpwf, /bpgoa, /bpnr, /bpgrounding, /bpsentry, /bpwindwall");
+    DEFAULT_CHAT_FRAME:AddMessage("    WATER: /bpms, /bphs, /bpfr, /bppoison, /bpdisease");
+    DEFAULT_CHAT_FRAME:AddMessage("  MANUAL CAST COMMANDS (use when casting outside /bpbuff):");
+    DEFAULT_CHAT_FRAME:AddMessage("    EARTH: /bpsoe-cast, /bpss-cast, /bptremor-cast, /bpstoneclaw-cast, /bpearthbind-cast");
+    DEFAULT_CHAT_FRAME:AddMessage("    FIRE: /bpft-cast, /bpfrr-cast, /bpfirenova-cast, /bpsearing-cast, /bpmagma-cast");
+    DEFAULT_CHAT_FRAME:AddMessage("    AIR: /bpwf-cast, /bpgoa-cast, /bpnr-cast, /bpgrounding-cast, /bpsentry-cast, /bpwindwall-cast");
+    DEFAULT_CHAT_FRAME:AddMessage("    WATER: /bpms-cast, /bphs-cast, /bpfr-cast, /bppoison-cast, /bpdisease-cast");
     DEFAULT_CHAT_FRAME:AddMessage("  /bp or /backpacker - Show usage information.");
     DEFAULT_CHAT_FRAME:AddMessage("  NOTE: Requires QuickHeal addon for healing functionality.");
 end
@@ -1370,7 +1823,7 @@ local function OnEvent(event, arg1)
         -- Check SuperWoW status
         if SUPERWOW_VERSION then
             superwowEnabled = true
-            DEFAULT_CHAT_FRAME:AddMessage("Backpacker: SuperWoW v" .. tostring(SUPERWOW_VERSION) .. " detected - using enhanced totem tracking");
+            DEFAULT_CHAT_FRAME:AddMessage("Backpacker: SuperWoW v" .. tostring(SUPERWOW_VERSION) .. " detected - using enhanced totem tracking with range checking");
         else
             superwowEnabled = false
             DEFAULT_CHAT_FRAME:AddMessage("Backpacker: SuperWoW not detected - using fallback buff detection");
