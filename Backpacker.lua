@@ -149,6 +149,7 @@ local TOTEM_DEFINITIONS = {
     ["Grounding Totem"] = { buff = nil, element = "air" },
     ["Sentry Totem"] = { buff = nil, element = "air" },
     ["Windwall Totem"] = { buff = "Windwall Totem", element = "air" },
+    ["Tranquil Air Totem"] = { buff = nil, element = "air" },
     
     -- Water Totems
     ["Mana Spring Totem"] = { buff = "Mana Spring", element = "water" },
@@ -672,6 +673,10 @@ local function DropTotems()
         elseif isCleansingTotem then
             -- In ZG/Strath mode, ALWAYS recast cleansing totem, even if it exists
             CastSpellByName(totem.spell);
+            if BP_TotemBar_StartTimer then
+                local el = string.upper(string.sub(totem.element,1,1))..string.sub(totem.element,2);
+                BP_TotemBar_StartTimer(el, totem.spell);
+            end
             PrintMessage("Casting " .. totem.spell .. " (forced recast for cleanse pulse).");
             totemState[i].locallyVerified = true;
             totemState[i].localVerifyTime = currentTime;
@@ -686,6 +691,10 @@ local function DropTotems()
                 PrintMessage("Skipping " .. totem.element .. " totem (disabled)");
             else
                 CastSpellByName(totem.spell);
+                if BP_TotemBar_StartTimer then
+                    local el = string.upper(string.sub(totem.element,1,1))..string.sub(totem.element,2);
+                    BP_TotemBar_StartTimer(el, totem.spell);
+                end
                 PrintMessage("Casting " .. totem.spell .. ".");
                 totemState[i].locallyVerified = true;
                 totemState[i].localVerifyTime = currentTime;
@@ -836,6 +845,7 @@ local function DropTotems()
         
         if not UnitAffectingCombat("player") then
             CastSpellByName("Totemic Recall");
+            if BP_TotemBar_StopAllTimers then BP_TotemBar_StopAllTimers(); end;
             lastTotemRecallTime = GetTime();
             lastAllTotemsActiveTime = 0;
             lastTotemCastTime = currentTime;
@@ -993,6 +1003,7 @@ local function HealPartyMembers()
                     AssistUnit(followTarget);
                     CastSpellByName("Chain Lightning");
                     CastSpellByName("Fire Nova Totem");
+                    if BP_TotemBar_StartTimer then BP_TotemBar_StartTimer("Fire", "Fire Nova Totem"); end;
                     CastSpellByName("Lightning Bolt");
                     PrintMessage("Casting Lightning Bolt at " .. target .. ".");
                 else
@@ -1112,6 +1123,7 @@ local function ToggleStratholmeMode()
     end
     ToggleSetting("STRATHOLME_MODE", "Stratholme mode");
     ResetTotemState();
+    if BP_TotemBar_UpdateMode then BP_TotemBar_UpdateMode(); end;
 end
 
 local function ToggleZulGurubMode()
@@ -1122,6 +1134,7 @@ local function ToggleZulGurubMode()
     end
     ToggleSetting("ZG_MODE", "Zul'Gurub mode");
     ResetTotemState();
+    if BP_TotemBar_UpdateMode then BP_TotemBar_UpdateMode(); end;
 end
 
 local function ToggleHybridMode()
@@ -1156,6 +1169,7 @@ local function ManualTotemicRecall()
     end
     
     CastSpellByName("Totemic Recall");
+    if BP_TotemBar_StopAllTimers then BP_TotemBar_StopAllTimers(); end;
     lastAllTotemsActiveTime = 0;
     lastTotemCastTime = currentTime;
     DEFAULT_CHAT_FRAME:AddMessage("Totems: RECALLED", 0, 1, 0);
@@ -1362,6 +1376,7 @@ end;
 SLASH_BPSOECAST1 = "/bpsoe-cast";
 SlashCmdList["BPSOECAST"] = function()
     CastSpellByName("Strength of Earth Totem")
+    if BP_TotemBar_StartTimer then BP_TotemBar_StartTimer("Earth", "Strength of Earth Totem"); end;
     for i, totem in ipairs(totemState) do
         if totem.element == "earth" then
             totemState[i].locallyVerified = true
@@ -1378,6 +1393,7 @@ end
 SLASH_BPSSCAST1 = "/bpss-cast";
 SlashCmdList["BPSSCAST"] = function()
     CastSpellByName("Stoneskin Totem")
+    if BP_TotemBar_StartTimer then BP_TotemBar_StartTimer("Earth", "Stoneskin Totem"); end;
     for i, totem in ipairs(totemState) do
         if totem.element == "earth" then
             totemState[i].locallyVerified = true
@@ -1394,6 +1410,7 @@ end
 SLASH_BPTREMORCAST1 = "/bptremor-cast";
 SlashCmdList["BPTREMORCAST"] = function()
     CastSpellByName("Tremor Totem")
+    if BP_TotemBar_StartTimer then BP_TotemBar_StartTimer("Earth", "Tremor Totem"); end;
     for i, totem in ipairs(totemState) do
         if totem.element == "earth" then
             totemState[i].locallyVerified = true
@@ -1410,6 +1427,7 @@ end
 SLASH_BPSTONECLAWCAST1 = "/bpstoneclaw-cast";
 SlashCmdList["BPSTONECLAWCAST"] = function()
     CastSpellByName("Stoneclaw Totem")
+    if BP_TotemBar_StartTimer then BP_TotemBar_StartTimer("Earth", "Stoneclaw Totem"); end;
     for i, totem in ipairs(totemState) do
         if totem.element == "earth" then
             totemState[i].locallyVerified = true
@@ -1426,6 +1444,7 @@ end
 SLASH_BPEARTHBINDCAST1 = "/bpearthbind-cast";
 SlashCmdList["BPEARTHBINDCAST"] = function()
     CastSpellByName("Earthbind Totem")
+    if BP_TotemBar_StartTimer then BP_TotemBar_StartTimer("Earth", "Earthbind Totem"); end;
     for i, totem in ipairs(totemState) do
         if totem.element == "earth" then
             totemState[i].locallyVerified = true
@@ -1443,6 +1462,7 @@ end
 SLASH_BPFTCAST1 = "/bpft-cast";
 SlashCmdList["BPFTCAST"] = function()
     CastSpellByName("Flametongue Totem")
+    if BP_TotemBar_StartTimer then BP_TotemBar_StartTimer("Fire", "Flametongue Totem"); end;
     for i, totem in ipairs(totemState) do
         if totem.element == "fire" then
             totemState[i].locallyVerified = true
@@ -1459,6 +1479,7 @@ end
 SLASH_BPFRRCAST1 = "/bpfrr-cast";
 SlashCmdList["BPFRRCAST"] = function()
     CastSpellByName("Frost Resistance Totem")
+    if BP_TotemBar_StartTimer then BP_TotemBar_StartTimer("Fire", "Frost Resistance Totem"); end;
     for i, totem in ipairs(totemState) do
         if totem.element == "fire" then
             totemState[i].locallyVerified = true
@@ -1475,6 +1496,7 @@ end
 SLASH_BPFIRENOVACAST1 = "/bpfirenova-cast";
 SlashCmdList["BPFIRENOVACAST"] = function()
     CastSpellByName("Fire Nova Totem")
+    if BP_TotemBar_StartTimer then BP_TotemBar_StartTimer("Fire", "Fire Nova Totem"); end;
     for i, totem in ipairs(totemState) do
         if totem.element == "fire" then
             totemState[i].locallyVerified = true
@@ -1491,6 +1513,7 @@ end
 SLASH_BPSEARINGCAST1 = "/bpsearing-cast";
 SlashCmdList["BPSEARINGCAST"] = function()
     CastSpellByName("Searing Totem")
+    if BP_TotemBar_StartTimer then BP_TotemBar_StartTimer("Fire", "Searing Totem"); end;
     for i, totem in ipairs(totemState) do
         if totem.element == "fire" then
             totemState[i].locallyVerified = true
@@ -1507,6 +1530,7 @@ end
 SLASH_BPMAGMACAST1 = "/bpmagma-cast";
 SlashCmdList["BPMAGMACAST"] = function()
     CastSpellByName("Magma Totem")
+    if BP_TotemBar_StartTimer then BP_TotemBar_StartTimer("Fire", "Magma Totem"); end;
     for i, totem in ipairs(totemState) do
         if totem.element == "fire" then
             totemState[i].locallyVerified = true
@@ -1524,6 +1548,7 @@ end
 SLASH_BPWFCAST1 = "/bpwf-cast";
 SlashCmdList["BPWFCAST"] = function()
     CastSpellByName("Windfury Totem")
+    if BP_TotemBar_StartTimer then BP_TotemBar_StartTimer("Air", "Windfury Totem"); end;
     for i, totem in ipairs(totemState) do
         if totem.element == "air" then
             totemState[i].locallyVerified = true
@@ -1540,6 +1565,7 @@ end
 SLASH_BPGOACAST1 = "/bpgoa-cast";
 SlashCmdList["BPGOACAST"] = function()
     CastSpellByName("Grace of Air Totem")
+    if BP_TotemBar_StartTimer then BP_TotemBar_StartTimer("Air", "Grace of Air Totem"); end;
     for i, totem in ipairs(totemState) do
         if totem.element == "air" then
             totemState[i].locallyVerified = true
@@ -1556,6 +1582,7 @@ end
 SLASH_BPNRCAST1 = "/bpnr-cast";
 SlashCmdList["BPNRCAST"] = function()
     CastSpellByName("Nature Resistance Totem")
+    if BP_TotemBar_StartTimer then BP_TotemBar_StartTimer("Air", "Nature Resistance Totem"); end;
     for i, totem in ipairs(totemState) do
         if totem.element == "air" then
             totemState[i].locallyVerified = true
@@ -1572,6 +1599,7 @@ end
 SLASH_BPGROUNDINGCAST1 = "/bpgrounding-cast";
 SlashCmdList["BPGROUNDINGCAST"] = function()
     CastSpellByName("Grounding Totem")
+    if BP_TotemBar_StartTimer then BP_TotemBar_StartTimer("Air", "Grounding Totem"); end;
     for i, totem in ipairs(totemState) do
         if totem.element == "air" then
             totemState[i].locallyVerified = true
@@ -1588,6 +1616,7 @@ end
 SLASH_BPSENTRYCAST1 = "/bpsentry-cast";
 SlashCmdList["BPSENTRYCAST"] = function()
     CastSpellByName("Sentry Totem")
+    if BP_TotemBar_StartTimer then BP_TotemBar_StartTimer("Air", "Sentry Totem"); end;
     for i, totem in ipairs(totemState) do
         if totem.element == "air" then
             totemState[i].locallyVerified = true
@@ -1604,6 +1633,7 @@ end
 SLASH_BPWINDWALLCAST1 = "/bpwindwall-cast";
 SlashCmdList["BPWINDWALLCAST"] = function()
     CastSpellByName("Windwall Totem")
+    if BP_TotemBar_StartTimer then BP_TotemBar_StartTimer("Air", "Windwall Totem"); end;
     for i, totem in ipairs(totemState) do
         if totem.element == "air" then
             totemState[i].locallyVerified = true
@@ -1617,10 +1647,29 @@ SlashCmdList["BPWINDWALLCAST"] = function()
     end
 end
 
+-- AIR - TRANQUIL
+SLASH_BPTRANQUILCAST1 = "/bptranquil-cast";
+SlashCmdList["BPTRANQUILCAST"] = function()
+    CastSpellByName("Tranquil Air Totem")
+    if BP_TotemBar_StartTimer then BP_TotemBar_StartTimer("Air", "Tranquil Air Totem"); end;
+    for i, totem in ipairs(totemState) do
+        if totem.element == "air" then
+            totemState[i].locallyVerified = true
+            totemState[i].localVerifyTime = GetTime()
+            totemState[i].serverVerified = false
+            totemState[i].unitId = nil
+            totemPositions.air = nil
+            DEFAULT_CHAT_FRAME:AddMessage("Backpacker: Manual Tranquil Air Totem cast - awaiting detection", 1, 1, 0)
+            break
+        end
+    end
+end
+
 -- WATER TOTEMS
 SLASH_BPMSCAST1 = "/bpms-cast";
 SlashCmdList["BPMSCAST"] = function()
     CastSpellByName("Mana Spring Totem")
+    if BP_TotemBar_StartTimer then BP_TotemBar_StartTimer("Water", "Mana Spring Totem"); end;
     for i, totem in ipairs(totemState) do
         if totem.element == "water" then
             totemState[i].locallyVerified = true
@@ -1637,6 +1686,7 @@ end
 SLASH_BPHSCAST1 = "/bphs-cast";
 SlashCmdList["BPHSCAST"] = function()
     CastSpellByName("Healing Stream Totem")
+    if BP_TotemBar_StartTimer then BP_TotemBar_StartTimer("Water", "Healing Stream Totem"); end;
     for i, totem in ipairs(totemState) do
         if totem.element == "water" then
             totemState[i].locallyVerified = true
@@ -1653,6 +1703,7 @@ end
 SLASH_BPFRCAST1 = "/bpfr-cast";
 SlashCmdList["BPFRCAST"] = function()
     CastSpellByName("Fire Resistance Totem")
+    if BP_TotemBar_StartTimer then BP_TotemBar_StartTimer("Water", "Fire Resistance Totem"); end;
     for i, totem in ipairs(totemState) do
         if totem.element == "water" then
             totemState[i].locallyVerified = true
@@ -1669,6 +1720,7 @@ end
 SLASH_BPPOISONCAST1 = "/bppoison-cast";
 SlashCmdList["BPPOISONCAST"] = function()
     CastSpellByName("Poison Cleansing Totem")
+    if BP_TotemBar_StartTimer then BP_TotemBar_StartTimer("Water", "Poison Cleansing Totem"); end;
     for i, totem in ipairs(totemState) do
         if totem.element == "water" then
             totemState[i].locallyVerified = true
@@ -1685,6 +1737,7 @@ end
 SLASH_BPDISEASECAST1 = "/bpdisease-cast";
 SlashCmdList["BPDISEASECAST"] = function()
     CastSpellByName("Disease Cleansing Totem")
+    if BP_TotemBar_StartTimer then BP_TotemBar_StartTimer("Water", "Disease Cleansing Totem"); end;
     for i, totem in ipairs(totemState) do
         if totem.element == "water" then
             totemState[i].locallyVerified = true
@@ -1697,6 +1750,52 @@ SlashCmdList["BPDISEASECAST"] = function()
         end
     end
 end
+
+-- =============================================================
+-- BACKPACKER.LUA PATCH  (add this block near the END of the file,
+-- just BEFORE the final "PrintUsage()" call on the last line)
+-- =============================================================
+--
+-- This thin shim exposes Backpacker internals to the TotemMenu
+-- module without polluting the global namespace any further.
+--
+-- Insert the block below in Backpacker.lua:
+-- =============================================================
+
+-- Public API table used by Backpacker_TotemMenu
+Backpacker = Backpacker or {};
+Backpacker.API = {
+
+    -- Returns the currently configured totem spell name for an element.
+    -- element : "Earth" | "Fire" | "Air" | "Water"  (capitalised)
+    GetTotem = function(element)
+        local key = string.upper(element) .. "_TOTEM";
+        return settings[key];
+    end,
+
+    -- Sets the totem for an element, mirroring the existing
+    -- Set*Totem local functions already in Backpacker.lua.
+    -- element   : "Earth" | "Fire" | "Air" | "Water"
+    -- totemName : exact spell name string
+    SetTotem = function(element, totemName)
+        local el = string.lower(element);
+        if el == "earth" then
+            SetEarthTotem(totemName, totemName);
+        elseif el == "fire" then
+            SetFireTotem(totemName, totemName);
+        elseif el == "air" then
+            SetAirTotem(totemName, totemName);
+        elseif el == "water" then
+            SetWaterTotem(totemName, totemName);
+        end
+    end,
+};
+
+-- =============================================================
+-- END OF PATCH BLOCK
+-- =============================================================
+
+
 
 -- USAGE INFORMATION
 local function PrintUsage()
@@ -1726,12 +1825,12 @@ local function PrintUsage()
     DEFAULT_CHAT_FRAME:AddMessage("  TOTEM CUSTOMIZATION:");
     DEFAULT_CHAT_FRAME:AddMessage("    EARTH: /bpsoe, /bpss, /bptremor, /bpstoneclaw, /bpearthbind");
     DEFAULT_CHAT_FRAME:AddMessage("    FIRE: /bpft, /bpfrr, /bpfirenova, /bpsearing, /bpmagma");
-    DEFAULT_CHAT_FRAME:AddMessage("    AIR: /bpwf, /bpgoa, /bpnr, /bpgrounding, /bpsentry, /bpwindwall");
+    DEFAULT_CHAT_FRAME:AddMessage("    AIR: /bpwf, /bpgoa, /bpnr, /bpgrounding, /bpsentry, /bpwindwall, /bptranquil");
     DEFAULT_CHAT_FRAME:AddMessage("    WATER: /bpms, /bphs, /bpfr, /bppoison, /bpdisease");
     DEFAULT_CHAT_FRAME:AddMessage("  MANUAL CAST COMMANDS (use when casting outside /bpbuff):");
     DEFAULT_CHAT_FRAME:AddMessage("    EARTH: /bpsoe-cast, /bpss-cast, /bptremor-cast, /bpstoneclaw-cast, /bpearthbind-cast");
     DEFAULT_CHAT_FRAME:AddMessage("    FIRE: /bpft-cast, /bpfrr-cast, /bpfirenova-cast, /bpsearing-cast, /bpmagma-cast");
-    DEFAULT_CHAT_FRAME:AddMessage("    AIR: /bpwf-cast, /bpgoa-cast, /bpnr-cast, /bpgrounding-cast, /bpsentry-cast, /bpwindwall-cast");
+    DEFAULT_CHAT_FRAME:AddMessage("    AIR: /bpwf-cast, /bpgoa-cast, /bpnr-cast, /bpgrounding-cast, /bpsentry-cast, /bpwindwall-cast, /bptranquil-cast");
     DEFAULT_CHAT_FRAME:AddMessage("    WATER: /bpms-cast, /bphs-cast, /bpfr-cast, /bppoison-cast, /bpdisease-cast");
     DEFAULT_CHAT_FRAME:AddMessage("  /bp or /backpacker - Show usage information.");
     DEFAULT_CHAT_FRAME:AddMessage("  NOTE: Requires QuickHeal addon for healing functionality.");
@@ -1804,6 +1903,7 @@ SLASH_BPMAGMA1 = "/bpmagma"; SlashCmdList["BPMAGMA"] = function() SetFireTotem("
 SLASH_BPGROUNDING1 = "/bpgrounding"; SlashCmdList["BPGROUNDING"] = function() SetAirTotem("Grounding Totem", "Grounding"); end;
 SLASH_BPSENTRY1 = "/bpsentry"; SlashCmdList["BPSENTRY"] = function() SetAirTotem("Sentry Totem", "Sentry"); end;
 SLASH_BPWINDWALL1 = "/bpwindwall"; SlashCmdList["BPWINDWALL"] = function() SetAirTotem("Windwall Totem", "Windwall"); end;
+SLASH_BPTRANQUIL1 = "/bptranquil"; SlashCmdList["BPTRANQUIL"] = function() SetAirTotem("Tranquil Air Totem", "Tranquil Air"); end;
 
 SLASH_BPPOISON1 = "/bppoison"; SlashCmdList["BPPOISON"] = function() SetWaterTotem("Poison Cleansing Totem", "Poison Cleansing"); end;
 SLASH_BPDISEASE1 = "/bpdisease"; SlashCmdList["BPDISEASE"] = function() SetWaterTotem("Disease Cleansing Totem", "Disease Cleansing"); end;
@@ -1839,3 +1939,556 @@ f:RegisterEvent("ADDON_LOADED");
 f:SetScript("OnEvent", OnEvent);
 
 PrintUsage();
+
+-- =============================================================
+-- TOTEM SELECTION MENU  (/bpmenu)
+-- 4 totem buttons; hover to open per-element flyout.
+-- =============================================================
+
+
+do
+    -- --------------------------------------------------------
+    -- DATA
+    -- --------------------------------------------------------
+    local TOTEM_ICONS = {
+        ["Strength of Earth Totem"] = "Interface\\Icons\\Spell_Nature_EarthBindTotem",
+        ["Stoneskin Totem"]         = "Interface\\Icons\\Spell_Nature_StoneSkinTotem",
+        ["Tremor Totem"]            = "Interface\\Icons\\Spell_Nature_TremorTotem",
+        ["Stoneclaw Totem"]         = "Interface\\Icons\\Spell_Nature_StoneclawTotem",
+        ["Earthbind Totem"]         = "Interface\\Icons\\Spell_Nature_StrengthOfEarthTotem02",
+        ["Flametongue Totem"]       = "Interface\\Icons\\spell_nature_guardianward",
+        ["Frost Resistance Totem"]  = "Interface\\Icons\\Spell_FrostResistanceTotem_01",
+        ["Fire Nova Totem"]         = "Interface\\Icons\\Spell_Fire_SealOfFire",
+        ["Searing Totem"]           = "Interface\\Icons\\Spell_Fire_SearingTotem",
+        ["Magma Totem"]             = "Interface\\Icons\\Spell_Fire_SelfDestruct",
+        ["Windfury Totem"]          = "Interface\\Icons\\spell_nature_windfury",
+        ["Grace of Air Totem"]      = "Interface\\Icons\\spell_nature_invisibilitytotem",
+        ["Nature Resistance Totem"] = "Interface\\Icons\\Spell_Nature_NatureResistanceTotem",
+        ["Grounding Totem"]         = "Interface\\Icons\\Spell_Nature_GroundingTotem",
+        ["Sentry Totem"]            = "Interface\\Icons\\Spell_Nature_RemoveCurse",
+        ["Windwall Totem"]          = "Interface\\Icons\\spell_nature_earthbind",
+        ["Tranquil Air Totem"]      = "Interface\\Icons\\spell_nature_brilliance",
+        ["Mana Spring Totem"]       = "Interface\\Icons\\Spell_Nature_ManaRegenTotem",
+        ["Healing Stream Totem"]    = "Interface\\Icons\\INV_Spear_04",
+        ["Fire Resistance Totem"]   = "Interface\\Icons\\Spell_FireResistanceTotem_01",
+        ["Poison Cleansing Totem"]  = "Interface\\Icons\\Spell_Nature_PoisonCleansingTotem",
+        ["Disease Cleansing Totem"] = "Interface\\Icons\\Spell_Nature_DiseaseCleansingTotem",
+    };
+
+    local FALLBACK_ICON = "Interface\\Icons\\INV_Misc_Idol_03";
+
+    -- Duration in seconds for each totem (0 = no timer shown)
+    local TOTEM_DURATIONS = {
+        ["Strength of Earth Totem"] = 120,
+        ["Stoneskin Totem"]         = 120,
+        ["Tremor Totem"]            = 120,
+        ["Stoneclaw Totem"]         =  15,
+        ["Earthbind Totem"]         =  45,
+        ["Flametongue Totem"]       = 120,
+        ["Frost Resistance Totem"]  = 120,
+        ["Searing Totem"]           =  30,
+        ["Fire Nova Totem"]         =  10,
+        ["Magma Totem"]             =  20,
+        ["Windfury Totem"]          = 120,
+        ["Grace of Air Totem"]      = 120,
+        ["Nature Resistance Totem"] = 120,
+        ["Grounding Totem"]         =  45,
+        ["Sentry Totem"]            = 120,
+        ["Windwall Totem"]          = 120,
+        ["Tranquil Air Totem"]      = 120,
+        ["Mana Spring Totem"]       =  60,
+        ["Healing Stream Totem"]    = 120,
+        ["Fire Resistance Totem"]   = 120,
+        ["Poison Cleansing Totem"]  = 120,
+        ["Disease Cleansing Totem"] = 120,
+    };
+
+    -- Active timer state: timerState[elementKey] = { startTime, duration } or nil
+    local timerState = {};
+
+    -- Order: Water > Earth > Air > Fire
+    local ELEMENTS = {
+        { key="Water", r=0.30, g=0.65, b=1.00, dbKey="WATER_TOTEM",
+          totems={"Mana Spring Totem","Healing Stream Totem","Fire Resistance Totem","Poison Cleansing Totem","Disease Cleansing Totem"} },
+        { key="Earth", r=0.80, g=0.60, b=0.20, dbKey="EARTH_TOTEM",
+          totems={"Strength of Earth Totem","Stoneskin Totem","Tremor Totem","Stoneclaw Totem","Earthbind Totem"} },
+        { key="Air",   r=0.55, g=0.85, b=1.00, dbKey="AIR_TOTEM",
+          totems={"Windfury Totem","Grace of Air Totem","Nature Resistance Totem","Windwall Totem","Grounding Totem","Sentry Totem","Tranquil Air Totem"} },
+        { key="Fire",  r=1.00, g=0.40, b=0.10, dbKey="FIRE_TOTEM",
+          totems={"Flametongue Totem","Frost Resistance Totem","Searing Totem","Fire Nova Totem","Magma Totem"} },
+    };
+
+    -- --------------------------------------------------------
+    -- HELPERS
+    -- --------------------------------------------------------
+    local function PlayerKnowsSpell(spellName)
+        local i = 1;
+        while true do
+            local n = GetSpellName(i, BOOKTYPE_SPELL);
+            if not n then break end;
+            if n == spellName then return true end;
+            i = i + 1;
+        end
+        return false;
+    end
+
+    local function GetCurrentTotem(dbKey)
+        return settings[dbKey];
+    end
+
+    local function ApplyTotemSelection(elementKey, totemName)
+        local el = string.lower(elementKey);
+        if     el == "earth" then SetEarthTotem(totemName, totemName);
+        elseif el == "fire"  then SetFireTotem(totemName, totemName);
+        elseif el == "air"   then SetAirTotem(totemName, totemName);
+        elseif el == "water" then SetWaterTotem(totemName, totemName);
+        end
+    end
+
+    -- --------------------------------------------------------
+    -- SHARED TOOLTIP
+    -- --------------------------------------------------------
+    local tt = CreateFrame("GameTooltip", "BP_MenuTT", UIParent, "GameTooltipTemplate");
+    tt:SetOwner(UIParent, "ANCHOR_NONE");
+
+    local function ShowSpellTip(anchor, spellName)
+        tt:ClearLines();
+        tt:SetOwner(anchor, "ANCHOR_RIGHT");
+        local i = 1;
+        while true do
+            local n = GetSpellName(i, BOOKTYPE_SPELL);
+            if not n then break end;
+            if n == spellName then
+                tt:SetSpell(i, BOOKTYPE_SPELL);
+                tt:Show();
+                return;
+            end
+            i = i + 1;
+        end
+        tt:AddLine(spellName, 1, 1, 1);
+        tt:Show();
+    end
+
+    -- --------------------------------------------------------
+    -- SIZES  (no labels anywhere)
+    -- --------------------------------------------------------
+    local BAR_BTN_SIZE = 40;
+    local BAR_PADDING  = 3;
+    local FLY_BTN_SIZE = 36;
+    local FLY_PADDING  = 4;
+    local FLY_ROW_H    = FLY_BTN_SIZE + 3;   -- icon + small gap, no label
+    local FLY_WIDTH    = FLY_BTN_SIZE + FLY_PADDING * 2;
+
+    -- --------------------------------------------------------
+    -- MAIN BAR FRAME
+    -- --------------------------------------------------------
+    local barW = BAR_BTN_SIZE * 4 + BAR_PADDING * 5;
+    local barH = BAR_BTN_SIZE + BAR_PADDING * 2;
+
+    local bar = CreateFrame("Frame", "BP_TotemBar", UIParent);
+    bar:SetWidth(barW);
+    bar:SetHeight(barH);
+    bar:SetPoint("CENTER", UIParent, "CENTER", 0, -300);
+    bar:SetMovable(true);
+    bar:EnableMouse(true);
+    bar:SetFrameStrata("MEDIUM");
+
+    bar:SetScript("OnMouseDown", function()
+        if arg1 == "LeftButton" then bar:StartMoving() end
+    end);
+    bar:SetScript("OnMouseUp", function()
+        bar:StopMovingOrSizing()
+    end);
+
+    local barBg = bar:CreateTexture(nil, "BACKGROUND");
+    barBg:SetTexture(0, 0, 0, 0.6);
+    barBg:SetAllPoints(bar);
+
+    -- --------------------------------------------------------
+    -- PER-ELEMENT STATE
+    -- --------------------------------------------------------
+    local flyoutFrames  = {};
+    local barButtons    = {};
+
+    -- Persistent ticker: updates countdown timers on bar buttons
+    local tickFrame = CreateFrame("Frame");
+    tickFrame:SetScript("OnUpdate", function()
+        local now = GetTime();
+        for i = 1, table.getn(ELEMENTS) do
+            local el = ELEMENTS[i];
+            local bb = barButtons[el.key];
+            local ts = timerState[el.key];
+            if bb and bb.timer then
+                if ts then
+                    local remaining = ts.duration - (now - ts.startTime);
+                    if remaining <= 0 then
+                        timerState[el.key] = nil;
+                        bb.timer:Hide();
+                    else
+                        local text;
+                        if remaining < 10 then
+                            text = string.format("%.1f", remaining);
+                        else
+                            text = string.format("%d", remaining);
+                        end
+                        bb.timer:SetText(text);
+                        -- colour: white->yellow->red as time runs low
+                        local r, g, b;
+                        if remaining > ts.duration * 0.5 then
+                            r, g, b = 1.0, 1.0, 1.0;
+                        elseif remaining > 10 then
+                            r, g, b = 1.0, 0.8, 0.0;
+                        else
+                            r, g, b = 1.0, 0.2, 0.2;
+                        end
+                        bb.timer:SetTextColor(r, g, b, 1);
+                        if bb.timerLayers then
+                            for li = 1, table.getn(bb.timerLayers) do
+                                bb.timerLayers[li]:SetText(text);
+                                bb.timerLayers[li]:Show();
+                            end
+                        end
+                        bb.timer:Show();
+                    end
+                else
+                    bb.timer:Hide();
+                    if bb.timerLayers then
+                        for li = 1, table.getn(bb.timerLayers) do
+                            bb.timerLayers[li]:Hide();
+                        end
+                    end
+                end
+            end
+        end
+    end);
+
+    local closeScheduled = {};
+
+    local function CloseFlyout(key)
+        if flyoutFrames[key] then flyoutFrames[key]:Hide() end;
+        closeScheduled[key] = false;
+    end
+
+    local function CloseAllFlyouts()
+        for i = 1, table.getn(ELEMENTS) do
+            CloseFlyout(ELEMENTS[i].key);
+        end
+    end
+
+    -- Deferred close: gives 120ms for mouse to travel into the flyout
+    local function ScheduleClose(key)
+        closeScheduled[key] = true;
+        local elapsed = 0;
+        bar:SetScript("OnUpdate", function()
+            elapsed = elapsed + arg1;
+            if elapsed < 0.12 then return end;
+            bar:SetScript("OnUpdate", nil);
+            if closeScheduled[key] then CloseFlyout(key) end;
+        end);
+    end
+
+    local function CancelClose(key)
+        closeScheduled[key] = false;
+    end
+
+    -- Update bar button icon from current settings.
+    -- Called each time the bar is shown or a selection is made.
+    -- Icon is set here (not at build time) to avoid the load-order
+    -- flicker where SetTexture races against the texture cache.
+    local function RefreshBarIcon(key, dbKey, iconTex)
+        local cur = GetCurrentTotem(dbKey);
+        local path = (cur and TOTEM_ICONS[cur]) or FALLBACK_ICON;
+        iconTex:SetTexture(path);
+    end
+
+    -- --------------------------------------------------------
+    -- BUILD COLUMNS
+    -- --------------------------------------------------------
+    for colIdx = 1, table.getn(ELEMENTS) do
+        local elDef     = ELEMENTS[colIdx];
+        local elementKey = elDef.key;
+        local dbKey      = elDef.dbKey;
+
+        -- ---- MAIN BAR BUTTON ----
+        local mainBtn = CreateFrame("Button", nil, bar);
+        mainBtn:SetWidth(BAR_BTN_SIZE);
+        mainBtn:SetHeight(BAR_BTN_SIZE);
+        mainBtn:SetPoint("TOPLEFT", bar, "TOPLEFT",
+            BAR_PADDING + (colIdx-1) * (BAR_BTN_SIZE + BAR_PADDING),
+            -BAR_PADDING);
+
+        -- Slot border background
+        local slotTex = mainBtn:CreateTexture(nil, "BACKGROUND");
+        slotTex:SetTexture("Interface\\Buttons\\UI-EmptySlot");
+        slotTex:SetAllPoints(mainBtn);
+
+        -- Icon as a plain ARTWORK texture — never touched at build time,
+        -- only set via RefreshBarIcon to avoid cache-race flicker.
+        local barIcon = mainBtn:CreateTexture(nil, "ARTWORK");
+        barIcon:SetWidth(BAR_BTN_SIZE - 6);
+        barIcon:SetHeight(BAR_BTN_SIZE - 6);
+        barIcon:SetPoint("CENTER", mainBtn, "CENTER", 0, 0);
+        -- leave texture unset here; RefreshBarIcon sets it on Show
+
+        local hiTex = mainBtn:CreateTexture(nil, "HIGHLIGHT");
+        hiTex:SetTexture("Interface\\Buttons\\ButtonHilight-Square");
+        hiTex:SetAllPoints(mainBtn);
+        hiTex:SetBlendMode("ADD");
+        mainBtn:SetHighlightTexture(hiTex);
+
+
+
+        -- Timer: four black shadow layers + white foreground = thick outline
+        local function MakeTimerFont(parent, ox, oy, r, g, b)
+            local fs = parent:CreateFontString(nil, "OVERLAY");
+            fs:SetFont("Fonts\\FRIZQT__.TTF", 14, "OUTLINE");
+            fs:SetPoint("CENTER", parent, "CENTER", ox, oy);
+            fs:SetTextColor(r, g, b, 1);
+            fs:Hide();
+            return fs;
+        end
+        local timerShadow1 = MakeTimerFont(mainBtn,  2, -2, 0, 0, 0);
+        local timerShadow2 = MakeTimerFont(mainBtn, -2, -2, 0, 0, 0);
+        local timerShadow3 = MakeTimerFont(mainBtn,  2,  2, 0, 0, 0);
+        local timerShadow4 = MakeTimerFont(mainBtn, -2,  2, 0, 0, 0);
+        local timerText    = MakeTimerFont(mainBtn,  0,  0, 1, 1, 1);
+        -- Store all layers so the ticker can update them together
+        local timerLayers = { timerShadow1, timerShadow2, timerShadow3, timerShadow4 };
+
+        barButtons[elementKey] = { btn=mainBtn, icon=barIcon, timer=timerText, timerLayers=timerLayers };
+
+        -- ---- FLYOUT FRAME ----
+        local maxRows = table.getn(elDef.totems);
+        local flyH    = FLY_PADDING * 2 + maxRows * FLY_ROW_H;
+
+        local fly = CreateFrame("Frame", nil, UIParent);
+        fly:SetWidth(FLY_WIDTH);
+        fly:SetHeight(flyH);
+        fly:SetFrameStrata("HIGH");
+        fly:EnableMouse(true);
+        fly:Hide();
+        flyoutFrames[elementKey] = fly;
+
+        -- dark bg
+        local flyBg = fly:CreateTexture(nil, "BACKGROUND");
+        flyBg:SetTexture(0, 0, 0, 0.82);
+        flyBg:SetAllPoints(fly);
+
+        -- element-coloured border
+        for _, anchor in ipairs({"TOP","BOTTOM","LEFT","RIGHT"}) do
+            local b = fly:CreateTexture(nil, "BORDER");
+            b:SetTexture(elDef.r, elDef.g, elDef.b, 0.7);
+            if anchor == "TOP" or anchor == "BOTTOM" then
+                b:SetHeight(1);
+                b:SetPoint(anchor.."LEFT", fly, anchor.."LEFT", 0, 0);
+                b:SetPoint(anchor.."RIGHT", fly, anchor.."RIGHT", 0, 0);
+            else
+                b:SetWidth(1);
+                b:SetPoint("TOP"..anchor, fly, "TOP"..anchor, 0, 0);
+                b:SetPoint("BOTTOM"..anchor, fly, "BOTTOM"..anchor, 0, 0);
+            end
+        end
+
+        fly:SetScript("OnLeave", function() ScheduleClose(elementKey) end);
+        fly:SetScript("OnEnter", function() CancelClose(elementKey) end);
+
+        -- ---- FLYOUT BUTTONS ----
+        local flyBtns = {};
+
+        for slotIdx = 1, table.getn(elDef.totems) do
+            -- Capture loop vars explicitly (Lua 5.0 closure requirement)
+            local thisTotem = elDef.totems[slotIdx];
+            local thisSlot  = slotIdx;
+
+            local fb = CreateFrame("CheckButton", nil, fly);
+            fb:SetWidth(FLY_BTN_SIZE);
+            fb:SetHeight(FLY_BTN_SIZE);
+            fb:SetPoint("TOP", fly, "TOP",
+                0, -(FLY_PADDING + (thisSlot-1) * FLY_ROW_H));
+
+            -- slot border
+            local fbSlot = fb:CreateTexture(nil, "BACKGROUND");
+            fbSlot:SetTexture("Interface\\Buttons\\UI-EmptySlot");
+            fbSlot:SetAllPoints(fb);
+
+            -- Icon: plain ARTWORK texture, set in fly:SetScript("OnShow")
+            -- to avoid the cache-race flicker seen when setting at build time.
+            local fbIcon = fb:CreateTexture(nil, "ARTWORK");
+            fbIcon:SetWidth(FLY_BTN_SIZE - 4);
+            fbIcon:SetHeight(FLY_BTN_SIZE - 4);
+            fbIcon:SetPoint("CENTER", fb, "CENTER", 0, 0);
+            fb.icon = fbIcon;
+            fb.totemPath = TOTEM_ICONS[thisTotem] or FALLBACK_ICON;
+
+            local fbHi = fb:CreateTexture(nil, "HIGHLIGHT");
+            fbHi:SetTexture("Interface\\Buttons\\ButtonHilight-Square");
+            fbHi:SetAllPoints(fb);
+            fbHi:SetBlendMode("ADD");
+            fb:SetHighlightTexture(fbHi);
+
+            local fbCk = fb:CreateTexture(nil, "OVERLAY");
+            fbCk:SetTexture("Interface\\Buttons\\CheckButtonHilight");
+            fbCk:SetAllPoints(fb);
+            fbCk:SetBlendMode("ADD");
+            fb:SetCheckedTexture(fbCk);
+
+            fb.totemName  = thisTotem;
+            fb.elementKey = elementKey;
+
+            fb:SetScript("OnClick", function()
+                ApplyTotemSelection(elementKey, thisTotem);
+                -- Update bar icon immediately
+                barButtons[elementKey].icon:SetTexture(
+                    TOTEM_ICONS[thisTotem] or FALLBACK_ICON);
+                -- Mutual exclusion: uncheck all, check this one
+                for i = 1, table.getn(flyBtns) do
+                    if flyBtns[i].totemName == thisTotem then
+                        flyBtns[i]:SetChecked(1);
+                    else
+                        flyBtns[i]:SetChecked(nil);
+                    end
+                end
+                CloseFlyout(elementKey);
+                tt:Hide();
+            end);
+
+            fb:SetScript("OnEnter", function()
+                CancelClose(elementKey);
+                ShowSpellTip(fb, thisTotem);
+            end);
+            fb:SetScript("OnLeave", function()
+                tt:Hide();
+                ScheduleClose(elementKey);
+            end);
+
+            flyBtns[thisSlot] = fb;
+        end
+
+        -- Set all flyout icons when the flyout opens (not at build time).
+        -- This is the key fix for the cache-race flicker.
+        fly:SetScript("OnShow", function()
+            local cur = GetCurrentTotem(dbKey);
+            for i = 1, table.getn(flyBtns) do
+                local b = flyBtns[i];
+                b.icon:SetTexture(b.totemPath);
+                if b.totemName == cur then
+                    b:SetChecked(1);
+                else
+                    b:SetChecked(nil);
+                end
+            end
+        end);
+
+        -- ---- OPEN FLYOUT ON HOVER ----
+        mainBtn:SetScript("OnEnter", function()
+            CancelClose(elementKey);
+            -- Close other flyouts
+            for i = 1, table.getn(ELEMENTS) do
+                if ELEMENTS[i].key ~= elementKey then
+                    CloseFlyout(ELEMENTS[i].key);
+                end
+            end
+            fly:ClearAllPoints();
+            fly:SetPoint("BOTTOM", mainBtn, "TOP", 0, 4);
+            fly:Show();
+        end);
+
+        mainBtn:SetScript("OnLeave", function()
+            ScheduleClose(elementKey);
+        end);
+
+        mainBtn:RegisterForClicks("LeftButtonUp", "RightButtonUp");
+        mainBtn:SetScript("OnClick", function()
+            if arg1 == "RightButton" then
+                -- Right-click: toggle flyout to change selection
+                if fly:IsVisible() then
+                    CloseFlyout(elementKey);
+                else
+                    CancelClose(elementKey);
+                    for i = 1, table.getn(ELEMENTS) do
+                        if ELEMENTS[i].key ~= elementKey then
+                            CloseFlyout(ELEMENTS[i].key);
+                        end
+                    end
+                    fly:ClearAllPoints();
+                    fly:SetPoint("BOTTOM", mainBtn, "TOP", 0, 4);
+                    fly:Show();
+                end
+            else
+                -- Left-click: cast the current totem
+                local cur = GetCurrentTotem(dbKey);
+                if cur then
+                    CastSpellByName(cur);
+                    BP_TotemBar_StartTimer(elementKey, cur);
+                else
+                    DEFAULT_CHAT_FRAME:AddMessage(
+                        "Backpacker: No " .. elementKey .. " totem selected.");
+                end
+            end
+        end);
+    end
+
+    -- --------------------------------------------------------
+    -- SLASH COMMAND
+    -- --------------------------------------------------------
+    SLASH_BPMENU1 = "/bpmenu";
+    SlashCmdList["BPMENU"] = function()
+        if bar:IsVisible() then
+            CloseAllFlyouts();
+            bar:Hide();
+        else
+            bar:Show();
+        end
+        PlaySound("igMainMenuOption");
+    end;
+
+    -- Start a countdown timer on a bar button
+    function BP_TotemBar_StartTimer(elementKey, totemName)
+        local dur = TOTEM_DURATIONS[totemName];
+        if dur and dur > 0 then
+            timerState[elementKey] = { startTime=GetTime(), duration=dur };
+        end
+    end
+
+    -- Stop all timers (e.g. on Totemic Recall)
+    function BP_TotemBar_StopAllTimers()
+        for i = 1, table.getn(ELEMENTS) do
+            timerState[ELEMENTS[i].key] = nil;
+        end
+    end
+
+    -- Call this after toggling ZG or Strath mode to update the Water button
+    function BP_TotemBar_UpdateMode()
+        local waterBtn = barButtons["Water"];
+        if not waterBtn then return end;
+
+        if settings.STRATHOLME_MODE then
+            -- Disease cleanse override
+            waterBtn.icon:SetTexture(TOTEM_ICONS["Disease Cleansing Totem"] or FALLBACK_ICON);
+            if DoiteGlow then DoiteGlow.Start(waterBtn.btn); end
+        elseif settings.ZG_MODE then
+            -- Poison cleanse override
+            waterBtn.icon:SetTexture(TOTEM_ICONS["Poison Cleansing Totem"] or FALLBACK_ICON);
+            if DoiteGlow then DoiteGlow.Start(waterBtn.btn); end
+        else
+            -- Normal: show actual selected water totem
+            local cur = GetCurrentTotem("WATER_TOTEM");
+            waterBtn.icon:SetTexture((cur and TOTEM_ICONS[cur]) or FALLBACK_ICON);
+            if DoiteGlow then DoiteGlow.Stop(waterBtn.btn); end
+        end
+    end
+
+    local function BP_TotemBar_RefreshIcons()
+        for i = 1, table.getn(ELEMENTS) do
+            local el = ELEMENTS[i];
+            local cur = GetCurrentTotem(el.dbKey);
+            local path = (cur and TOTEM_ICONS[cur]) or FALLBACK_ICON;
+            barButtons[el.key].icon:SetTexture(path);
+        end
+        -- Apply mode override on top
+        BP_TotemBar_UpdateMode();
+    end
+
+    BP_TotemBar_RefreshIcons();
+    DEFAULT_CHAT_FRAME:AddMessage("Backpacker: /bpmenu ready.");
+end
