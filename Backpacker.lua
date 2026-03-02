@@ -254,7 +254,7 @@ swFrame:SetScript("OnEvent", function()
     if string.find(unitName, "Totem") and UnitName(unitId .. "owner") == UnitName("player") then
         -- This is our totem!
         if settings.DEBUG_MODE then
-            DEFAULT_CHAT_FRAME:AddMessage("Backpacker: SuperWoW detected our totem: " .. unitName, 0, 1, 0)
+            -- DEFAULT_CHAT_FRAME:AddMessage("Backpacker: SuperWoW detected our totem: " .. unitName, 0, 1, 0)
         end
         
         -- Get totem position
@@ -271,10 +271,10 @@ swFrame:SetScript("OnEvent", function()
                     -- Store the position
                     if tx and ty then
                         totemPositions[totem.element] = { x = tx, y = ty }
-                        PrintMessage(totem.element .. " totem position saved: " .. math.floor(tx) .. "," .. math.floor(ty))
+                        -- PrintMessage(totem.element .. " totem position saved: " .. math.floor(tx) .. "," .. math.floor(ty))
                     end
                     if settings.DEBUG_MODE then
-                        DEFAULT_CHAT_FRAME:AddMessage("Backpacker: Matched " .. totem.element .. " totem via SuperWoW", 0, 1, 0)
+                        -- DEFAULT_CHAT_FRAME:AddMessage("Backpacker: Matched " .. totem.element .. " totem via SuperWoW", 0, 1, 0)
                     end
                     break
                 end
@@ -314,7 +314,7 @@ local function CheckTotemRange()
         if pos and pos.x and pos.y then
             local dist = GetDistance(px, py, pos.x, pos.y)
             if dist and dist > TOTEM_RANGE then
-                PrintMessage(element .. " totem out of range (" .. math.floor(dist) .. " yards)")
+                -- PrintMessage(element .. " totem out of range (" .. math.floor(dist) .. " yards)")
                 
                 -- Find and reset this totem
                 for i, totem in ipairs(totemState) do
@@ -1037,6 +1037,7 @@ local function SetEarthTotem(totemName, displayName)
         lastAllTotemsActiveTime = 0;
         PrintMessage("Earth totem changed to " .. totemName .. " - resetting verification state.");
         DEFAULT_CHAT_FRAME:AddMessage("Backpacker: Earth totem set to " .. displayName .. ".");
+        if BP_TotemBar_RefreshIcons then BP_TotemBar_RefreshIcons(); end;
     else
         DEFAULT_CHAT_FRAME:AddMessage("Backpacker: Unknown earth totem: " .. totemName);
     end
@@ -1061,6 +1062,7 @@ local function SetFireTotem(totemName, displayName)
         lastAllTotemsActiveTime = 0;
         PrintMessage("Fire totem changed to " .. totemName .. " - resetting verification state.");
         DEFAULT_CHAT_FRAME:AddMessage("Backpacker: Fire totem set to " .. displayName .. ".");
+        if BP_TotemBar_RefreshIcons then BP_TotemBar_RefreshIcons(); end;
     else
         DEFAULT_CHAT_FRAME:AddMessage("Backpacker: Unknown fire totem: " .. totemName);
     end
@@ -1085,6 +1087,7 @@ local function SetAirTotem(totemName, displayName)
         lastAllTotemsActiveTime = 0;
         PrintMessage("Air totem changed to " .. totemName .. " - resetting verification state.");
         DEFAULT_CHAT_FRAME:AddMessage("Backpacker: Air totem set to " .. displayName .. ".");
+        if BP_TotemBar_RefreshIcons then BP_TotemBar_RefreshIcons(); end;
     else
         DEFAULT_CHAT_FRAME:AddMessage("Backpacker: Unknown air totem: " .. totemName);
     end
@@ -1109,6 +1112,7 @@ local function SetWaterTotem(totemName, displayName)
         lastAllTotemsActiveTime = 0;
         PrintMessage("Water totem changed to " .. totemName .. " - resetting verification state.");
         DEFAULT_CHAT_FRAME:AddMessage("Backpacker: Water totem set to " .. displayName .. ".");
+        if BP_TotemBar_RefreshIcons then BP_TotemBar_RefreshIcons(); end;
     else
         DEFAULT_CHAT_FRAME:AddMessage("Backpacker: Unknown water totem: " .. totemName);
     end
@@ -2072,8 +2076,9 @@ do
     -- --------------------------------------------------------
     -- SIZES  (no labels anywhere)
     -- --------------------------------------------------------
-    local BAR_BTN_SIZE = 40;
-    local BAR_PADDING  = 3;
+    local BAR_BTN_SIZE    = 40;
+    local BAR_PADDING     = 3;
+    local ACTIVE_BTN_SIZE = 28;  -- smaller "active totem" indicator below bar
     local FLY_BTN_SIZE = 36;
     local FLY_PADDING  = 4;
     local FLY_ROW_H    = FLY_BTN_SIZE + 3;   -- icon + small gap, no label
@@ -2083,7 +2088,7 @@ do
     -- MAIN BAR FRAME
     -- --------------------------------------------------------
     local barW = BAR_BTN_SIZE * 4 + BAR_PADDING * 5;
-    local barH = BAR_BTN_SIZE + BAR_PADDING * 2;
+    local barH = BAR_BTN_SIZE + BAR_PADDING * 3 + ACTIVE_BTN_SIZE;
 
     local bar = CreateFrame("Frame", "BP_TotemBar", UIParent);
     bar:SetWidth(barW);
@@ -2101,7 +2106,7 @@ do
     end);
 
     local barBg = bar:CreateTexture(nil, "BACKGROUND");
-    barBg:SetTexture(0, 0, 0, 0.6);
+    barBg:SetTexture(0, 0, 0, 0);
     barBg:SetAllPoints(bar);
 
     -- --------------------------------------------------------
@@ -2110,7 +2115,7 @@ do
     local flyoutFrames  = {};
     local barButtons    = {};
 
-    -- Persistent ticker: updates countdown timers on bar buttons
+    -- Persistent ticker: updates countdown timers on bar buttons + active buttons
     local tickFrame = CreateFrame("Frame");
     tickFrame:SetScript("OnUpdate", function()
         local now = GetTime();
@@ -2118,46 +2123,80 @@ do
             local el = ELEMENTS[i];
             local bb = barButtons[el.key];
             local ts = timerState[el.key];
-            if bb and bb.timer then
-                if ts then
-                    local remaining = ts.duration - (now - ts.startTime);
-                    if remaining <= 0 then
-                        timerState[el.key] = nil;
-                        bb.timer:Hide();
-                    else
-                        local text;
-                        if remaining < 10 then
-                            text = string.format("%.1f", remaining);
-                        else
-                            text = string.format("%d", remaining);
-                        end
-                        bb.timer:SetText(text);
-                        -- colour: white->yellow->red as time runs low
-                        local r, g, b;
-                        if remaining > ts.duration * 0.5 then
-                            r, g, b = 1.0, 1.0, 1.0;
-                        elseif remaining > 10 then
-                            r, g, b = 1.0, 0.8, 0.0;
-                        else
-                            r, g, b = 1.0, 0.2, 0.2;
-                        end
-                        bb.timer:SetTextColor(r, g, b, 1);
-                        if bb.timerLayers then
-                            for li = 1, table.getn(bb.timerLayers) do
-                                bb.timerLayers[li]:SetText(text);
-                                bb.timerLayers[li]:Show();
-                            end
-                        end
-                        bb.timer:Show();
-                    end
+            if not bb then return end;
+
+            -- Helper: set text + colour on a fontstring + its shadow layers
+            local function SetTimerDisplay(fs, layers, text, r, g, b)
+                fs:SetText(text);
+                fs:SetTextColor(r, g, b, 1);
+                fs:Show();
+                for li = 1, table.getn(layers) do
+                    layers[li]:SetText(text);
+                    layers[li]:Show();
+                end
+            end
+            local function HideTimerDisplay(fs, layers)
+                fs:Hide();
+                for li = 1, table.getn(layers) do layers[li]:Hide() end;
+            end
+            local function TimerColor(remaining, duration)
+                if remaining > duration * 0.5 then return 1.0, 1.0, 1.0;
+                elseif remaining > 10        then return 1.0, 0.8, 0.0;
+                else                              return 1.0, 0.2, 0.2;
+                end
+            end
+            local function FormatTime(remaining)
+                if remaining < 10 then return string.format("%.1f", remaining);
+                else                   return string.format("%d", remaining);
+                end
+            end
+
+            -- Is there an active (different) totem ticking?
+            local setTotem = GetCurrentTotem(el.dbKey);
+            -- In ZG/Strath mode the water totem is overridden; treat the
+            -- override as the effective set totem so it shows on the main button.
+            if el.key == "Water" then
+                if settings.STRATHOLME_MODE then
+                    setTotem = "Disease Cleansing Totem";
+                elseif settings.ZG_MODE then
+                    setTotem = "Poison Cleansing Totem";
+                end
+            end
+            local activeTotem = ts and ts.totemName;
+            local showActive = activeTotem and activeTotem ~= setTotem;
+
+            if ts then
+                local remaining = ts.duration - (now - ts.startTime);
+
+                if ts.duration == 0 or remaining <= 0 then
+                    -- Timer expired or no duration: clear everything
+                    timerState[el.key] = nil;
+                    HideTimerDisplay(bb.timer, bb.timerLayers);
+                    if bb.activeBtn then bb.activeBtn:Hide() end;
                 else
-                    bb.timer:Hide();
-                    if bb.timerLayers then
-                        for li = 1, table.getn(bb.timerLayers) do
-                            bb.timerLayers[li]:Hide();
+                    local text = FormatTime(remaining);
+                    local r, g, b = TimerColor(remaining, ts.duration);
+
+                    if showActive then
+                        -- Active totem differs from set totem:
+                        -- main button shows set totem (no timer on it)
+                        HideTimerDisplay(bb.timer, bb.timerLayers);
+                        -- active button shows the running totem + timer
+                        if bb.activeBtn then
+                            bb.activeIcon:SetTexture(
+                                TOTEM_ICONS[activeTotem] or FALLBACK_ICON);
+                            SetTimerDisplay(bb.activeTimer, bb.activeTimerLayers, text, r, g, b);
+                            bb.activeBtn:Show();
                         end
+                    else
+                        -- Active == set: show timer on main button, hide active button
+                        SetTimerDisplay(bb.timer, bb.timerLayers, text, r, g, b);
+                        if bb.activeBtn then bb.activeBtn:Hide() end;
                     end
                 end
+            else
+                HideTimerDisplay(bb.timer, bb.timerLayers);
+                if bb.activeBtn then bb.activeBtn:Hide() end;
             end
         end
     end);
@@ -2238,24 +2277,63 @@ do
 
 
 
-        -- Timer: four black shadow layers + white foreground = thick outline
-        local function MakeTimerFont(parent, ox, oy, r, g, b)
-            local fs = parent:CreateFontString(nil, "OVERLAY");
-            fs:SetFont("Fonts\\FRIZQT__.TTF", 14, "OUTLINE");
-            fs:SetPoint("CENTER", parent, "CENTER", ox, oy);
-            fs:SetTextColor(r, g, b, 1);
-            fs:Hide();
-            return fs;
-        end
-        local timerShadow1 = MakeTimerFont(mainBtn,  2, -2, 0, 0, 0);
-        local timerShadow2 = MakeTimerFont(mainBtn, -2, -2, 0, 0, 0);
-        local timerShadow3 = MakeTimerFont(mainBtn,  2,  2, 0, 0, 0);
-        local timerShadow4 = MakeTimerFont(mainBtn, -2,  2, 0, 0, 0);
-        local timerText    = MakeTimerFont(mainBtn,  0,  0, 1, 1, 1);
-        -- Store all layers so the ticker can update them together
-        local timerLayers = { timerShadow1, timerShadow2, timerShadow3, timerShadow4 };
+        -- Timer: single FontString with THICKOUTLINE for clean black border
+        local timerText = mainBtn:CreateFontString(nil, "OVERLAY");
+        timerText:SetFont("Fonts\\FRIZQT__.TTF", 14, "THICKOUTLINE");
+        timerText:SetPoint("CENTER", mainBtn, "CENTER", 0, 0);
+        timerText:SetTextColor(1, 1, 1, 1);
+        timerText:Hide();
+        local timerLayers = {};
 
-        barButtons[elementKey] = { btn=mainBtn, icon=barIcon, timer=timerText, timerLayers=timerLayers };
+        -- ---- ACTIVE TOTEM BUTTON (shown below when active != set) ----
+        local activeBtn = CreateFrame("Button", nil, bar);
+        activeBtn:SetWidth(ACTIVE_BTN_SIZE);
+        activeBtn:SetHeight(ACTIVE_BTN_SIZE);
+        activeBtn:SetPoint("TOP", mainBtn, "BOTTOM",
+            0, -BAR_PADDING);
+
+        local aSlot = activeBtn:CreateTexture(nil, "BACKGROUND");
+        aSlot:SetTexture("Interface\\Buttons\\UI-EmptySlot");
+        aSlot:SetAllPoints(activeBtn);
+
+        local aIcon = activeBtn:CreateTexture(nil, "ARTWORK");
+        aIcon:SetWidth(ACTIVE_BTN_SIZE - 4);
+        aIcon:SetHeight(ACTIVE_BTN_SIZE - 4);
+        aIcon:SetPoint("CENTER", activeBtn, "CENTER", 0, 0);
+
+        local aHi = activeBtn:CreateTexture(nil, "HIGHLIGHT");
+        aHi:SetTexture("Interface\\Buttons\\ButtonHilight-Square");
+        aHi:SetAllPoints(activeBtn);
+        aHi:SetBlendMode("ADD");
+        activeBtn:SetHighlightTexture(aHi);
+
+        -- Timer layers for the active button
+        local aTimer = activeBtn:CreateFontString(nil, "OVERLAY");
+        aTimer:SetFont("Fonts\\FRIZQT__.TTF", 10, "THICKOUTLINE");
+        aTimer:SetPoint("CENTER", activeBtn, "CENTER", 0, 0);
+        aTimer:SetTextColor(1, 1, 1, 1);
+        aTimer:Hide();
+        local aTimerLayers = {};
+
+        -- Cast on left-click (same as main button)
+        activeBtn:SetScript("OnClick", function()
+            local ts = timerState[elementKey];
+            if ts and ts.totemName then
+                CastSpellByName(ts.totemName);
+                BP_TotemBar_StartTimer(elementKey, ts.totemName);
+            end
+        end);
+        activeBtn:SetScript("OnEnter", function()
+            local ts = timerState[elementKey];
+            if ts and ts.totemName then ShowSpellTip(activeBtn, ts.totemName) end;
+        end);
+        activeBtn:SetScript("OnLeave", function() tt:Hide() end);
+
+        activeBtn:Hide();
+
+        barButtons[elementKey] = { btn=mainBtn, icon=barIcon, timer=timerText, timerLayers=timerLayers,
+                                   activeBtn=activeBtn, activeIcon=aIcon,
+                                   activeTimer=aTimer, activeTimerLayers=aTimerLayers };
 
         -- ---- FLYOUT FRAME ----
         local maxRows = table.getn(elDef.totems);
@@ -2446,14 +2524,26 @@ do
     function BP_TotemBar_StartTimer(elementKey, totemName)
         local dur = TOTEM_DURATIONS[totemName];
         if dur and dur > 0 then
-            timerState[elementKey] = { startTime=GetTime(), duration=dur };
+            timerState[elementKey] = { startTime=GetTime(), duration=dur, totemName=totemName };
+        else
+            -- No duration but still track active totem name
+            timerState[elementKey] = { startTime=GetTime(), duration=0, totemName=totemName };
         end
     end
 
     -- Stop all timers (e.g. on Totemic Recall)
     function BP_TotemBar_StopAllTimers()
         for i = 1, table.getn(ELEMENTS) do
-            timerState[ELEMENTS[i].key] = nil;
+            local key = ELEMENTS[i].key;
+            timerState[key] = nil;
+            local bb = barButtons[key];
+            if bb then
+                if bb.activeBtn then bb.activeBtn:Hide() end;
+                bb.timer:Hide();
+                for li = 1, table.getn(bb.timerLayers) do
+                    bb.timerLayers[li]:Hide();
+                end
+            end
         end
     end
 
@@ -2478,7 +2568,7 @@ do
         end
     end
 
-    local function BP_TotemBar_RefreshIcons()
+    function BP_TotemBar_RefreshIcons()
         for i = 1, table.getn(ELEMENTS) do
             local el = ELEMENTS[i];
             local cur = GetCurrentTotem(el.dbKey);
