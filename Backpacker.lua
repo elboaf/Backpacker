@@ -184,6 +184,8 @@ local SHIELD_DEFINITIONS = {
 local lastTotemRecallTime = 0;
 local lastAllTotemsActiveTime = 0;
 local lastTotemCastTime = 0;
+local lastFireNovaCastTime = 0;
+local FIRE_NOVA_DURATION = 5;
 local pendingTotems = {};
 local TOTEM_RECALL_COOLDOWN = 3;
 local TOTEM_RECALL_ACTIVATION_COOLDOWN = 3;
@@ -509,7 +511,7 @@ local function DropTotems()
 
     if currentTime - lastTotemCastTime < TOTEM_CAST_DELAY then
         local remainingDelay = TOTEM_CAST_DELAY - (currentTime - lastTotemCastTime);
-        PrintMessage("Totem cast delay. Please wait " .. string.format("%.1f", remainingDelay) .. " seconds.");
+        -- PrintMessage("Totem cast delay. Please wait " .. string.format("%.1f", remainingDelay) .. " seconds.");
         return;
     end
 
@@ -1845,10 +1847,6 @@ end
 
 -- REGISTER SLASH COMMANDS
 SLASH_BPHEAL1 = "/bpheal"; SlashCmdList["BPHEAL"] = HealPartyMembers;
--- Timestamp of last Fire Nova cast; used to block /bpfirebuff for its duration
-local lastFireNovaCastTime = 0;
-local FIRE_NOVA_DURATION = 5;
-
 local function DropFireTotem()
     local currentTime = GetTime();
 
@@ -1875,7 +1873,7 @@ local function DropFireTotem()
 
     -- If Fire Nova Totem is still within its duration, never override it
     if currentTime - lastFireNovaCastTime < FIRE_NOVA_DURATION then
-        DEFAULT_CHAT_FRAME:AddMessage("Backpacker: Fire Nova Totem active, not overriding.");
+        -- DEFAULT_CHAT_FRAME:AddMessage("Backpacker: Fire Nova Totem active, not overriding.");
         return;
     end
 
@@ -1901,7 +1899,7 @@ local function DropFireTotem()
     end
 
     if fireActive then
-        DEFAULT_CHAT_FRAME:AddMessage("Backpacker: Fire totem already active.");
+        --DEFAULT_CHAT_FRAME:AddMessage("Backpacker: Fire totem already active.");
         return;
     end
 
@@ -1919,7 +1917,7 @@ local function DropFireTotem()
         end
     end
     lastTotemCastTime = currentTime;
-    DEFAULT_CHAT_FRAME:AddMessage("Backpacker: Dropping " .. fireSpell .. ".", 1, 0.6, 0.1);
+    -- DEFAULT_CHAT_FRAME:AddMessage("Backpacker: Dropping " .. fireSpell .. ".", 1, 0.6, 0.1);
 end
 
 SLASH_BPBUFF1 = "/bpbuff"; SlashCmdList["BPBUFF"] = DropTotems;
