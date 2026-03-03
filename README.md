@@ -1,21 +1,16 @@
 # Backpacker
 
-**Version:** 1.5.0 | **Author:** Ler | **WoW 1.12 Vanilla**
+**Version:** 1.5.0 | **Author:** Rel | **WoW 1.12 Vanilla**
 
-A Shaman multiboxing addon. Automates totem dropping, party healing, shield upkeep, and follow logic across your team.
+A Shaman multiboxing addon. Automates totem dropping, party healing, shield upkeep, and follow logic.
 
 ---
 
 ## Dependencies
 
-- **SuperWoW** *(recommended)* — precise totem detection via unit IDs and range checking. Falls back to buff-based detection without it.
+- **SuperWoW** — precise totem detection via unit IDs and range checking. Falls back to buff-based detection without it.
 - **DoiteAuras** — animated glow on the totem bar in ZG/Strath mode.
-
----
-
-## Installation
-
-Drop `Backpacker` and `DoiteAuras` into `Interface\AddOns\` and reload.
+- **Quickheal** — Healing logic backend.
 
 ---
 
