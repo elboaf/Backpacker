@@ -254,7 +254,7 @@ swFrame:SetScript("OnEvent", function()
     if string.find(unitName, "Totem") and UnitName(unitId .. "owner") == UnitName("player") then
         -- This is our totem!
         if settings.DEBUG_MODE then
-            -- DEFAULT_CHAT_FRAME:AddMessage("Backpacker: SuperWoW detected our totem: " .. unitName, 0, 1, 0)
+            DEFAULT_CHAT_FRAME:AddMessage("Backpacker: SuperWoW detected our totem: " .. unitName, 0, 1, 0)
         end
         
         -- Get totem position
@@ -271,10 +271,10 @@ swFrame:SetScript("OnEvent", function()
                     -- Store the position
                     if tx and ty then
                         totemPositions[totem.element] = { x = tx, y = ty }
-                        -- PrintMessage(totem.element .. " totem position saved: " .. math.floor(tx) .. "," .. math.floor(ty))
+                        PrintMessage(totem.element .. " totem position saved: " .. math.floor(tx) .. "," .. math.floor(ty))
                     end
                     if settings.DEBUG_MODE then
-                        -- DEFAULT_CHAT_FRAME:AddMessage("Backpacker: Matched " .. totem.element .. " totem via SuperWoW", 0, 1, 0)
+                        DEFAULT_CHAT_FRAME:AddMessage("Backpacker: Matched " .. totem.element .. " totem via SuperWoW", 0, 1, 0)
                     end
                     break
                 end
@@ -314,7 +314,7 @@ local function CheckTotemRange()
         if pos and pos.x and pos.y then
             local dist = GetDistance(px, py, pos.x, pos.y)
             if dist and dist > TOTEM_RANGE then
-                -- PrintMessage(element .. " totem out of range (" .. math.floor(dist) .. " yards)")
+                PrintMessage(element .. " totem out of range (" .. math.floor(dist) .. " yards)")
                 
                 -- Find and reset this totem
                 for i, totem in ipairs(totemState) do
@@ -1004,6 +1004,7 @@ local function HealPartyMembers()
                     CastSpellByName("Chain Lightning");
                     CastSpellByName("Fire Nova Totem");
                     if BP_TotemBar_StartTimer then BP_TotemBar_StartTimer("Fire", "Fire Nova Totem"); end;
+                    lastFireNovaCastTime = GetTime();
                     CastSpellByName("Lightning Bolt");
                     PrintMessage("Casting Lightning Bolt at " .. target .. ".");
                 else
@@ -1501,6 +1502,7 @@ SLASH_BPFIRENOVACAST1 = "/bpfirenova-cast";
 SlashCmdList["BPFIRENOVACAST"] = function()
     CastSpellByName("Fire Nova Totem")
     if BP_TotemBar_StartTimer then BP_TotemBar_StartTimer("Fire", "Fire Nova Totem"); end;
+    lastFireNovaCastTime = GetTime();
     for i, totem in ipairs(totemState) do
         if totem.element == "fire" then
             totemState[i].locallyVerified = true
@@ -1805,7 +1807,8 @@ Backpacker.API = {
 local function PrintUsage()
     DEFAULT_CHAT_FRAME:AddMessage("Backpacker: Usage (QuickHeal Integration):");
     DEFAULT_CHAT_FRAME:AddMessage("  /bpheal - Heal party and raid members using QuickHeal.");
-    DEFAULT_CHAT_FRAME:AddMessage("  /bpbuff - Drop totems.");
+    DEFAULT_CHAT_FRAME:AddMessage("  /bpbuff - Drop totems.")
+    DEFAULT_CHAT_FRAME:AddMessage("  /bpfirebuff - Drop fire totem only if not active.");
     DEFAULT_CHAT_FRAME:AddMessage("  /bprecall - Manually cast Totemic Recall.");
     DEFAULT_CHAT_FRAME:AddMessage("  /bpdebug - Toggle debug messages.");
     DEFAULT_CHAT_FRAME:AddMessage("  /bpf - Toggle follow functionality.");
@@ -1842,7 +1845,85 @@ end
 
 -- REGISTER SLASH COMMANDS
 SLASH_BPHEAL1 = "/bpheal"; SlashCmdList["BPHEAL"] = HealPartyMembers;
+-- Timestamp of last Fire Nova cast; used to block /bpfirebuff for its duration
+local lastFireNovaCastTime = 0;
+local FIRE_NOVA_DURATION = 5;
+
+local function DropFireTotem()
+    local currentTime = GetTime();
+
+    if currentTime - lastTotemRecallTime < TOTEM_RECALL_COOLDOWN then
+        DEFAULT_CHAT_FRAME:AddMessage("Backpacker: Totems on cooldown after recall.");
+        return;
+    end
+
+    if currentTime - lastTotemCastTime < TOTEM_CAST_DELAY then
+        DEFAULT_CHAT_FRAME:AddMessage("Backpacker: Totem cast delay, please wait.");
+        return;
+    end
+
+    if settings.FARMING_MODE then
+        DEFAULT_CHAT_FRAME:AddMessage("Backpacker: Fire totem suppressed in farming mode.");
+        return;
+    end
+
+    local fireSpell = settings.FIRE_TOTEM;
+    if not fireSpell or fireSpell == "" then
+        DEFAULT_CHAT_FRAME:AddMessage("Backpacker: No fire totem configured.");
+        return;
+    end
+
+    -- If Fire Nova Totem is still within its duration, never override it
+    if currentTime - lastFireNovaCastTime < FIRE_NOVA_DURATION then
+        DEFAULT_CHAT_FRAME:AddMessage("Backpacker: Fire Nova Totem active, not overriding.");
+        return;
+    end
+
+    -- Check if fire totem is already active
+    local fireActive = false;
+    for i, totem in ipairs(totemState) do
+        if totem.element == "fire" then
+            if superwowEnabled then
+                if totem.unitId and UnitExists(totem.unitId) then
+                    fireActive = true;
+                end
+            else
+                if totem.buff then
+                    if HasBuff(totem.buff, "player") then
+                        fireActive = true;
+                    end
+                elseif totem.locallyVerified and totem.serverVerified then
+                    fireActive = true;
+                end
+            end
+            break;
+        end
+    end
+
+    if fireActive then
+        DEFAULT_CHAT_FRAME:AddMessage("Backpacker: Fire totem already active.");
+        return;
+    end
+
+    CastSpellByName(fireSpell);
+    if BP_TotemBar_StartTimer then BP_TotemBar_StartTimer("Fire", fireSpell); end;
+    for i, totem in ipairs(totemState) do
+        if totem.element == "fire" then
+            totemState[i].spell = fireSpell;
+            totemState[i].locallyVerified = true;
+            totemState[i].localVerifyTime = currentTime;
+            totemState[i].serverVerified = false;
+            totemState[i].unitId = nil;
+            totemPositions.fire = nil;
+            break;
+        end
+    end
+    lastTotemCastTime = currentTime;
+    DEFAULT_CHAT_FRAME:AddMessage("Backpacker: Dropping " .. fireSpell .. ".", 1, 0.6, 0.1);
+end
+
 SLASH_BPBUFF1 = "/bpbuff"; SlashCmdList["BPBUFF"] = DropTotems;
+SLASH_BPFIREBUFF1 = "/bpfirebuff"; SlashCmdList["BPFIREBUFF"] = DropFireTotem;
 SLASH_BPDEBUG1 = "/bpdebug"; SlashCmdList["BPDEBUG"] = function() ToggleSetting("DEBUG_MODE", "Debug mode"); end;
 SLASH_BPF1 = "/bpf"; SlashCmdList["BPF"] = function() ToggleSetting("FOLLOW_ENABLED", "Follow functionality"); end;
 SLASH_BPCHAINHEAL1 = "/bpchainheal"; SlashCmdList["BPCHAINHEAL"] = function() ToggleSetting("CHAIN_HEAL_ENABLED", "Chain Heal functionality"); end;
@@ -1991,7 +2072,7 @@ do
         ["Flametongue Totem"]       = 120,
         ["Frost Resistance Totem"]  = 120,
         ["Searing Totem"]           =  30,
-        ["Fire Nova Totem"]         =  10,
+        ["Fire Nova Totem"]         =   5,
         ["Magma Totem"]             =  20,
         ["Windfury Totem"]          = 120,
         ["Grace of Air Totem"]      = 120,
