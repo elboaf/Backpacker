@@ -273,7 +273,6 @@ swFrame:SetScript("OnEvent", function()
                     -- Store the position
                     if tx and ty then
                         totemPositions[totem.element] = { x = tx, y = ty }
-                        PrintMessage(totem.element .. " totem position saved: " .. math.floor(tx) .. "," .. math.floor(ty))
                     end
                     if settings.DEBUG_MODE then
                         DEFAULT_CHAT_FRAME:AddMessage("Backpacker: Matched " .. totem.element .. " totem via SuperWoW", 0, 1, 0)
@@ -442,7 +441,7 @@ local function CheckAndRefreshShield()
     if settings.FARMING_MODE then
         if currentShield ~= shieldSpell then
             CastSpellByName(shieldSpell);
-            PrintMessage("Farming mode: Switching to " .. shieldSpell);
+            PrintShieldMessage("Farming mode: Switching to " .. shieldSpell);
             lastTotemCastTime = currentTime;
             return true;
         end
@@ -450,7 +449,7 @@ local function CheckAndRefreshShield()
         local maxCharges = GetMaxShieldCharges(shieldSpell);
         if currentShield ~= shieldSpell or currentCharges < 1 or currentCharges < maxCharges then
             CastSpellByName(shieldSpell);
-            PrintMessage(shieldSpell .. " needs refreshing (" .. currentCharges .. "/" .. maxCharges .. " charges)");
+            PrintShieldMessage(shieldSpell .. " needs refreshing (" .. currentCharges .. "/" .. maxCharges .. " charges)");
             lastTotemCastTime = currentTime;
             return true;
         end
@@ -462,6 +461,42 @@ end
 local function PrintMessage(message)
     if settings.DEBUG_MODE then
         DEFAULT_CHAT_FRAME:AddMessage("Backpacker: " .. message);
+    end
+end
+
+-- Recall message throttle
+local lastRecallMessageTime = 0;
+local RECALL_MESSAGE_COOLDOWN = 6;
+
+-- Shield message throttle
+local lastShieldMessageTime = 0;
+local SHIELD_MESSAGE_COOLDOWN = 1;
+
+local function PrintShieldMessage(msg)
+    local now = GetTime();
+    if now - lastShieldMessageTime >= SHIELD_MESSAGE_COOLDOWN then
+        lastShieldMessageTime = now;
+        DEFAULT_CHAT_FRAME:AddMessage("Backpacker: " .. msg);
+    end
+end
+
+-- Shield-set message throttle (for SetWaterShield etc.)
+local lastShieldSetMessageTime = 0;
+local SHIELD_SET_MESSAGE_COOLDOWN = 1;
+
+local function PrintShieldSetMessage(msg)
+    local now = GetTime();
+    if now - lastShieldSetMessageTime >= SHIELD_SET_MESSAGE_COOLDOWN then
+        lastShieldSetMessageTime = now;
+        DEFAULT_CHAT_FRAME:AddMessage("Backpacker: " .. msg);
+    end
+end
+
+local function PrintRecallMessage()
+    local now = GetTime();
+    if now - lastRecallMessageTime >= RECALL_MESSAGE_COOLDOWN then
+        lastRecallMessageTime = now;
+        DEFAULT_CHAT_FRAME:AddMessage("Totems: RECALLED", 0, 1, 0);
     end
 end
 
@@ -494,9 +529,7 @@ local function DropTotems()
     
     -- Check if any totems are out of range
     if superwowEnabled and CheckTotemRange() then
-        -- If we found out-of-range totems, reset the recall timer
         lastAllTotemsActiveTime = 0
-        -- Continue with normal totem dropping
     end
     
     if CheckAndRefreshShield() then
@@ -510,8 +543,6 @@ local function DropTotems()
     end
 
     if currentTime - lastTotemCastTime < TOTEM_CAST_DELAY then
-        local remainingDelay = TOTEM_CAST_DELAY - (currentTime - lastTotemCastTime);
-        -- PrintMessage("Totem cast delay. Please wait " .. string.format("%.1f", remainingDelay) .. " seconds.");
         return;
     end
 
@@ -596,14 +627,11 @@ local function DropTotems()
     local hadExpiredTotems = false;
     
     if superwowEnabled then
-        -- SUPERWOW: Check each totem by its unitId
         for i, totem in ipairs(totemState) do
-            -- Skip disabled totems in farming mode
             if (totem.element == "fire" or totem.element == "water") and settings.FARMING_MODE then
                 totemState[i].locallyVerified = true;
                 totemState[i].serverVerified = true;
             elseif totem.unitId then
-                -- Check if the totem still exists
                 if not UnitExists(totem.unitId) then
                     PrintMessage(totem.element .. " totem expired/destroyed (Unit no longer exists)");
                     totemState[i].serverVerified = false;
@@ -612,7 +640,6 @@ local function DropTotems()
                     totemPositions[totem.element] = nil;
                     hadExpiredTotems = true;
                 else
-                    -- Double-check it still belongs to us
                     if UnitName(totem.unitId .. "owner") ~= UnitName("player") then
                         PrintMessage(totem.element .. " totem no longer belongs to us");
                         totemState[i].serverVerified = false;
@@ -623,7 +650,6 @@ local function DropTotems()
                     end
                 end
             elseif totem.locallyVerified and not totem.unitId then
-                -- We thought it was active but have no unitId - reset it
                 PrintMessage(totem.element .. " has no unitId - resetting");
                 totemState[i].serverVerified = false;
                 totemState[i].locallyVerified = false;
@@ -632,7 +658,6 @@ local function DropTotems()
             end
         end
     else
-        -- FALLBACK: Use buff checking
         for i, totem in ipairs(totemState) do
             if (totem.element == "fire" or totem.element == "water") and settings.FARMING_MODE then
                 totemState[i].locallyVerified = true;
@@ -654,12 +679,10 @@ local function DropTotems()
     if hadExpiredTotems and lastAllTotemsActiveTime > 0 then
         PrintMessage("Expired totems detected - resetting recall cooldown.");
         lastAllTotemsActiveTime = 0;
-        DEFAULT_CHAT_FRAME:AddMessage("Totems: NEED REPLACEMENT", 1, 1, 0);
     end
 
     -- PHASE 2: Drop totems that need to be dropped
     for i, totem in ipairs(totemState) do
-        -- Check if this is a cleansing totem in ZG/Strath mode
         local isCleansingTotem = false
         if settings.STRATHOLME_MODE and totem.element == "water" and totem.spell == "Disease Cleansing Totem" then
             isCleansingTotem = true
@@ -673,7 +696,6 @@ local function DropTotems()
                 totemState[i].serverVerified = true;
             end
         elseif isCleansingTotem then
-            -- In ZG/Strath mode, ALWAYS recast cleansing totem, even if it exists
             CastSpellByName(totem.spell);
             if BP_TotemBar_StartTimer then
                 local el = string.upper(string.sub(totem.element,1,1))..string.sub(totem.element,2);
@@ -700,8 +722,8 @@ local function DropTotems()
                 PrintMessage("Casting " .. totem.spell .. ".");
                 totemState[i].locallyVerified = true;
                 totemState[i].localVerifyTime = currentTime;
-                totemState[i].unitId = nil; -- Clear old unitId, waiting for new one
-                totemPositions[totem.element] = nil; -- Clear old position
+                totemState[i].unitId = nil;
+                totemPositions[totem.element] = nil;
                 lastTotemCastTime = currentTime;
                 return;
             end
@@ -718,7 +740,6 @@ local function DropTotems()
     end
 
     if allLocallyVerified and lastAllTotemsActiveTime == 0 then
-        DEFAULT_CHAT_FRAME:AddMessage("Totems: Pending", 1, 0.5, 0);
         PrintMessage("All totems locally verified. Waiting for confirmation...");
     end
 
@@ -727,20 +748,15 @@ local function DropTotems()
     local needsFastDropRestart = false;
     
     if superwowEnabled then
-        -- SUPERWOW: Check verification status
         for i, totem in ipairs(totemState) do
-            -- Skip disabled totems in farming mode
             if (totem.element == "fire" or totem.element == "water") and settings.FARMING_MODE then
                 -- Already marked verified
             elseif totem.locallyVerified and not totem.serverVerified then
-                -- Check if we have a unitId for this totem yet
                 if totem.unitId then
-                    -- We have a unitId, verify it's still valid and belongs to us
                     if UnitExists(totem.unitId) and UnitName(totem.unitId .. "owner") == UnitName("player") then
                         PrintMessage(totem.element .. " totem confirmed via SuperWoW")
                         totemState[i].serverVerified = true
                     else
-                        -- UnitId no longer valid or not ours
                         PrintMessage(totem.element .. " unitId invalid - resetting")
                         totemState[i].unitId = nil
                         totemState[i].serverVerified = false
@@ -751,7 +767,6 @@ local function DropTotems()
                         needsFastDropRestart = true
                     end
                 else
-                    -- No unitId yet, check timeout
                     local timeSinceLocalVerify = currentTime - totem.localVerifyTime;
                     if timeSinceLocalVerify > TOTEM_VERIFICATION_TIME then
                         PrintMessage(totem.element .. " totem missing after " .. string.format("%.1f", timeSinceLocalVerify) .. "s - resetting.");
@@ -774,7 +789,6 @@ local function DropTotems()
             end
         end
     else
-        -- FALLBACK: Original buff checking code
         for i, totem in ipairs(totemState) do
             if (totem.element == "fire" or totem.element == "water") and settings.FARMING_MODE then
                 -- Skip
@@ -798,7 +812,6 @@ local function DropTotems()
                         end
                     end
                 else
-                    -- Totems without buffs
                     local timeSinceLocalVerify = currentTime - totem.localVerifyTime;
                     local resetInterval = 1.0;
                     
@@ -851,7 +864,7 @@ local function DropTotems()
             lastTotemRecallTime = GetTime();
             lastAllTotemsActiveTime = 0;
             lastTotemCastTime = currentTime;
-            DEFAULT_CHAT_FRAME:AddMessage("Totems: RECALLED", 0, 1, 0);
+            PrintRecallMessage();
             ResetTotemState()
             PrintMessage("Casting Totemic Recall. Totems will be available in " .. TOTEM_RECALL_COOLDOWN .. " seconds.");
         else
@@ -1122,6 +1135,21 @@ local function SetWaterTotem(totemName, displayName)
 end
 
 -- MODE TOGGLES
+local function ResetWaterTotemState()
+    for i, totem in ipairs(totemState) do
+        if totem.element == "water" then
+            totemState[i].locallyVerified = false;
+            totemState[i].serverVerified = false;
+            totemState[i].localVerifyTime = 0;
+            totemState[i].unitId = nil;
+            totemPositions.water = nil;
+            break;
+        end
+    end
+    lastAllTotemsActiveTime = 0;
+    PrintMessage("Water totem state reset.");
+end
+
 local function ToggleStratholmeMode()
     if settings.ZG_MODE then
         settings.ZG_MODE = false;
@@ -1129,7 +1157,7 @@ local function ToggleStratholmeMode()
         DEFAULT_CHAT_FRAME:AddMessage("Backpacker: Zul'Gurub mode disabled.");
     end
     ToggleSetting("STRATHOLME_MODE", "Stratholme mode");
-    ResetTotemState();
+    ResetWaterTotemState();
     if BP_TotemBar_UpdateMode then BP_TotemBar_UpdateMode(); end;
 end
 
@@ -1140,7 +1168,7 @@ local function ToggleZulGurubMode()
         DEFAULT_CHAT_FRAME:AddMessage("Backpacker: Stratholme mode disabled.");
     end
     ToggleSetting("ZG_MODE", "Zul'Gurub mode");
-    ResetTotemState();
+    ResetWaterTotemState();
     if BP_TotemBar_UpdateMode then BP_TotemBar_UpdateMode(); end;
 end
 
@@ -1171,7 +1199,6 @@ local function ManualTotemicRecall()
     local currentTime = GetTime();
     
     if currentTime - lastTotemRecallTime < TOTEM_RECALL_COOLDOWN then
-        local remainingCooldown = TOTEM_RECALL_COOLDOWN - (currentTime - lastTotemRecallTime);
         return;
     end
     
@@ -1179,7 +1206,7 @@ local function ManualTotemicRecall()
     if BP_TotemBar_StopAllTimers then BP_TotemBar_StopAllTimers(); end;
     lastAllTotemsActiveTime = 0;
     lastTotemCastTime = currentTime;
-    DEFAULT_CHAT_FRAME:AddMessage("Totems: RECALLED", 0, 1, 0);
+    PrintRecallMessage();
     ResetTotemState();
 end
 
@@ -1196,41 +1223,32 @@ end
 
 local function SetWaterShield()
     if settings.FARMING_MODE then
-        DEFAULT_CHAT_FRAME:AddMessage("Backpacker: Cannot change shield type while farming mode is active. Disable farming mode first with /bpfarm");
+        PrintShieldSetMessage("Cannot change shield type while farming mode is active. Disable farming mode first with /bpfarm");
         return
     end
     settings.SHIELD_TYPE = "Water Shield"
     BackpackerDB.SHIELD_TYPE = "Water Shield"
-    DEFAULT_CHAT_FRAME:AddMessage("Backpacker: Shield type set to Water Shield.");
-    if settings.AUTO_SHIELD_MODE then
-        DEFAULT_CHAT_FRAME:AddMessage("Backpacker: Auto-refresh is now set to Water Shield.");
-    end
+    PrintShieldSetMessage("Shield type set to Water Shield.");
 end
 
 local function SetLightningShield()
     if settings.FARMING_MODE then
-        DEFAULT_CHAT_FRAME:AddMessage("Backpacker: Cannot change shield type while farming mode is active. Disable farming mode first with /bpfarm");
+        PrintShieldSetMessage("Cannot change shield type while farming mode is active. Disable farming mode first with /bpfarm");
         return
     end
     settings.SHIELD_TYPE = "Lightning Shield"
     BackpackerDB.SHIELD_TYPE = "Lightning Shield"
-    DEFAULT_CHAT_FRAME:AddMessage("Backpacker: Shield type set to Lightning Shield.");
-    if settings.AUTO_SHIELD_MODE then
-        DEFAULT_CHAT_FRAME:AddMessage("Backpacker: Auto-refresh is now set to Lightning Shield.");
-    end
+    PrintShieldSetMessage("Shield type set to Lightning Shield.");
 end
 
 local function SetEarthShield()
     if settings.FARMING_MODE then
-        DEFAULT_CHAT_FRAME:AddMessage("Backpacker: Cannot change shield type while farming mode is active. Disable farming mode first with /bpfarm");
+        PrintShieldSetMessage("Cannot change shield type while farming mode is active. Disable farming mode first with /bpfarm");
         return
     end
     settings.SHIELD_TYPE = "Earth Shield"
     BackpackerDB.SHIELD_TYPE = "Earth Shield"
-    DEFAULT_CHAT_FRAME:AddMessage("Backpacker: Shield type set to Earth Shield.");
-    if settings.AUTO_SHIELD_MODE then
-        DEFAULT_CHAT_FRAME:AddMessage("Backpacker: Auto-refresh is now set to Earth Shield.");
-    end
+    PrintShieldSetMessage("Shield type set to Earth Shield.");
 end
 
 local function SetFollowTarget(targetName)
@@ -1377,7 +1395,7 @@ SlashCmdList["BPCHECKBUFFS"] = function()
     end
 end;
 
--- MANUAL TOTEM CAST COMMANDS - EVERY TOTEM
+-- MANUAL TOTEM CAST COMMANDS
 
 -- EARTH TOTEMS
 SLASH_BPSOECAST1 = "/bpsoe-cast";
@@ -1655,7 +1673,6 @@ SlashCmdList["BPWINDWALLCAST"] = function()
     end
 end
 
--- AIR - TRANQUIL
 SLASH_BPTRANQUILCAST1 = "/bptranquil-cast";
 SlashCmdList["BPTRANQUILCAST"] = function()
     CastSpellByName("Tranquil Air Totem")
@@ -1759,51 +1776,23 @@ SlashCmdList["BPDISEASECAST"] = function()
     end
 end
 
--- =============================================================
--- BACKPACKER.LUA PATCH  (add this block near the END of the file,
--- just BEFORE the final "PrintUsage()" call on the last line)
--- =============================================================
---
--- This thin shim exposes Backpacker internals to the TotemMenu
--- module without polluting the global namespace any further.
---
--- Insert the block below in Backpacker.lua:
--- =============================================================
-
 -- Public API table used by Backpacker_TotemMenu
 Backpacker = Backpacker or {};
 Backpacker.API = {
-
-    -- Returns the currently configured totem spell name for an element.
-    -- element : "Earth" | "Fire" | "Air" | "Water"  (capitalised)
     GetTotem = function(element)
         local key = string.upper(element) .. "_TOTEM";
         return settings[key];
     end,
 
-    -- Sets the totem for an element, mirroring the existing
-    -- Set*Totem local functions already in Backpacker.lua.
-    -- element   : "Earth" | "Fire" | "Air" | "Water"
-    -- totemName : exact spell name string
     SetTotem = function(element, totemName)
         local el = string.lower(element);
-        if el == "earth" then
-            SetEarthTotem(totemName, totemName);
-        elseif el == "fire" then
-            SetFireTotem(totemName, totemName);
-        elseif el == "air" then
-            SetAirTotem(totemName, totemName);
-        elseif el == "water" then
-            SetWaterTotem(totemName, totemName);
+        if     el == "earth" then SetEarthTotem(totemName, totemName);
+        elseif el == "fire"  then SetFireTotem(totemName, totemName);
+        elseif el == "air"   then SetAirTotem(totemName, totemName);
+        elseif el == "water" then SetWaterTotem(totemName, totemName);
         end
     end,
 };
-
--- =============================================================
--- END OF PATCH BLOCK
--- =============================================================
-
-
 
 -- USAGE INFORMATION
 local function PrintUsage()
@@ -1847,6 +1836,7 @@ end
 
 -- REGISTER SLASH COMMANDS
 SLASH_BPHEAL1 = "/bpheal"; SlashCmdList["BPHEAL"] = HealPartyMembers;
+
 local function DropFireTotem()
     local currentTime = GetTime();
 
@@ -1856,7 +1846,6 @@ local function DropFireTotem()
     end
 
     if currentTime - lastTotemCastTime < TOTEM_CAST_DELAY then
-        DEFAULT_CHAT_FRAME:AddMessage("Backpacker: Totem cast delay, please wait.");
         return;
     end
 
@@ -1871,13 +1860,10 @@ local function DropFireTotem()
         return;
     end
 
-    -- If Fire Nova Totem is still within its duration, never override it
     if currentTime - lastFireNovaCastTime < FIRE_NOVA_DURATION then
-        -- DEFAULT_CHAT_FRAME:AddMessage("Backpacker: Fire Nova Totem active, not overriding.");
         return;
     end
 
-    -- Check if fire totem is already active
     local fireActive = false;
     for i, totem in ipairs(totemState) do
         if totem.element == "fire" then
@@ -1899,7 +1885,6 @@ local function DropFireTotem()
     end
 
     if fireActive then
-        --DEFAULT_CHAT_FRAME:AddMessage("Backpacker: Fire totem already active.");
         return;
     end
 
@@ -1917,7 +1902,6 @@ local function DropFireTotem()
         end
     end
     lastTotemCastTime = currentTime;
-    -- DEFAULT_CHAT_FRAME:AddMessage("Backpacker: Dropping " .. fireSpell .. ".", 1, 0.6, 0.1);
 end
 
 SLASH_BPBUFF1 = "/bpbuff"; SlashCmdList["BPBUFF"] = DropTotems;
@@ -1933,7 +1917,6 @@ SLASH_BPRECALL1 = "/bprecall"; SlashCmdList["BPRECALL"] = ManualTotemicRecall;
 SLASH_BPPETS1 = "/bppets"; SlashCmdList["BPPETS"] = TogglePetHealing;
 SLASH_BPAUTO1 = "/bpauto"; SlashCmdList["BPAUTO"] = ToggleAutoShieldMode;
 
--- Follow target
 SLASH_BPL1 = "/bpl";
 SlashCmdList["BPL"] = function()
     if UnitExists("target") and UnitIsPlayer("target") then
@@ -1946,7 +1929,6 @@ SlashCmdList["BPL"] = function()
     end
 end;
 
--- Shield type commands
 SLASH_BPWATERSHIELD1 = "/bpwatershield";
 SLASH_BPWATERSHIELD2 = "/bpws";
 SlashCmdList["BPWATERSHIELD"] = SetWaterShield;
@@ -1959,7 +1941,6 @@ SLASH_BPEARTHSHIELD1 = "/bpearthshield";
 SLASH_BPEARTHSHIELD2 = "/bpes";
 SlashCmdList["BPEARTHSHIELD"] = SetEarthShield;
 
--- Totem customization commands
 SLASH_BPSOE1 = "/bpsoe"; SlashCmdList["BPSOE"] = function() SetEarthTotem("Strength of Earth Totem", "Strength of Earth"); end;
 SLASH_BPSS1 = "/bpss"; SlashCmdList["BPSS"] = function() SetEarthTotem("Stoneskin Totem", "Stoneskin"); end;
 
@@ -1974,7 +1955,6 @@ SLASH_BPMS1 = "/bpms"; SlashCmdList["BPMS"] = function() SetWaterTotem("Mana Spr
 SLASH_BPHS1 = "/bphs"; SlashCmdList["BPHS"] = function() SetWaterTotem("Healing Stream Totem", "Healing Stream"); end;
 SLASH_BPFR1 = "/bpfr"; SlashCmdList["BPFR"] = function() SetWaterTotem("Fire Resistance Totem", "Fire Resistance"); end;
 
--- Additional totem commands
 SLASH_BPTREMOR1 = "/bptremor"; SlashCmdList["BPTREMOR"] = function() SetEarthTotem("Tremor Totem", "Tremor"); end;
 SLASH_BPSTONECLAW1 = "/bpstoneclaw"; SlashCmdList["BPSTONECLAW"] = function() SetEarthTotem("Stoneclaw Totem", "Stoneclaw"); end;
 SLASH_BPEARTHBIND1 = "/bpearthbind"; SlashCmdList["BPEARTHBIND"] = function() SetEarthTotem("Earthbind Totem", "Earthbind"); end;
@@ -2003,7 +1983,6 @@ local function OnEvent(event, arg1)
         end
         totemState = InitializeTotemState();
         
-        -- Check SuperWoW status
         if SUPERWOW_VERSION then
             superwowEnabled = true
             DEFAULT_CHAT_FRAME:AddMessage("Backpacker: SuperWoW v" .. tostring(SUPERWOW_VERSION) .. " detected - using enhanced totem tracking with range checking");
@@ -2016,7 +1995,6 @@ local function OnEvent(event, arg1)
     end
 end
 
--- Initialize
 local f = CreateFrame("Frame");
 f:RegisterEvent("ADDON_LOADED");
 f:SetScript("OnEvent", OnEvent);
@@ -2024,15 +2002,10 @@ f:SetScript("OnEvent", OnEvent);
 PrintUsage();
 
 -- =============================================================
--- TOTEM SELECTION MENU  (/bpmenu)
--- 4 totem buttons; hover to open per-element flyout.
+-- TOTEM BAR  (/bpmenu)
 -- =============================================================
 
-
 do
-    -- --------------------------------------------------------
-    -- DATA
-    -- --------------------------------------------------------
     local TOTEM_ICONS = {
         ["Strength of Earth Totem"] = "Interface\\Icons\\Spell_Nature_EarthBindTotem",
         ["Stoneskin Totem"]         = "Interface\\Icons\\Spell_Nature_StoneSkinTotem",
@@ -2060,7 +2033,6 @@ do
 
     local FALLBACK_ICON = "Interface\\Icons\\INV_Misc_Idol_03";
 
-    -- Duration in seconds for each totem (0 = no timer shown)
     local TOTEM_DURATIONS = {
         ["Strength of Earth Totem"] = 120,
         ["Stoneskin Totem"]         = 120,
@@ -2069,7 +2041,7 @@ do
         ["Earthbind Totem"]         =  45,
         ["Flametongue Totem"]       = 120,
         ["Frost Resistance Totem"]  = 120,
-        ["Searing Totem"]           =  30,
+        ["Searing Totem"]           =  55,
         ["Fire Nova Totem"]         =   5,
         ["Magma Totem"]             =  20,
         ["Windfury Totem"]          = 120,
@@ -2086,10 +2058,8 @@ do
         ["Disease Cleansing Totem"] = 120,
     };
 
-    -- Active timer state: timerState[elementKey] = { startTime, duration } or nil
     local timerState = {};
 
-    -- Order: Water > Earth > Air > Fire
     local ELEMENTS = {
         { key="Water", r=0.30, g=0.65, b=1.00, dbKey="WATER_TOTEM",
           totems={"Mana Spring Totem","Healing Stream Totem","Fire Resistance Totem","Poison Cleansing Totem","Disease Cleansing Totem"} },
@@ -2101,9 +2071,6 @@ do
           totems={"Flametongue Totem","Frost Resistance Totem","Searing Totem","Fire Nova Totem","Magma Totem"} },
     };
 
-    -- --------------------------------------------------------
-    -- HELPERS
-    -- --------------------------------------------------------
     local function PlayerKnowsSpell(spellName)
         local i = 1;
         while true do
@@ -2128,9 +2095,6 @@ do
         end
     end
 
-    -- --------------------------------------------------------
-    -- SHARED TOOLTIP
-    -- --------------------------------------------------------
     local tt = CreateFrame("GameTooltip", "BP_MenuTT", UIParent, "GameTooltipTemplate");
     tt:SetOwner(UIParent, "ANCHOR_NONE");
 
@@ -2152,20 +2116,14 @@ do
         tt:Show();
     end
 
-    -- --------------------------------------------------------
-    -- SIZES  (no labels anywhere)
-    -- --------------------------------------------------------
     local BAR_BTN_SIZE    = 40;
     local BAR_PADDING     = 3;
-    local ACTIVE_BTN_SIZE = 28;  -- smaller "active totem" indicator below bar
+    local ACTIVE_BTN_SIZE = 28;
     local FLY_BTN_SIZE = 36;
     local FLY_PADDING  = 4;
-    local FLY_ROW_H    = FLY_BTN_SIZE + 3;   -- icon + small gap, no label
+    local FLY_ROW_H    = FLY_BTN_SIZE + 3;
     local FLY_WIDTH    = FLY_BTN_SIZE + FLY_PADDING * 2;
 
-    -- --------------------------------------------------------
-    -- MAIN BAR FRAME
-    -- --------------------------------------------------------
     local barW = BAR_BTN_SIZE * 4 + BAR_PADDING * 5;
     local barH = BAR_BTN_SIZE + BAR_PADDING * 3 + ACTIVE_BTN_SIZE;
 
@@ -2188,13 +2146,9 @@ do
     barBg:SetTexture(0, 0, 0, 0);
     barBg:SetAllPoints(bar);
 
-    -- --------------------------------------------------------
-    -- PER-ELEMENT STATE
-    -- --------------------------------------------------------
     local flyoutFrames  = {};
     local barButtons    = {};
 
-    -- Persistent ticker: updates countdown timers on bar buttons + active buttons
     local tickFrame = CreateFrame("Frame");
     tickFrame:SetScript("OnUpdate", function()
         local now = GetTime();
@@ -2204,7 +2158,6 @@ do
             local ts = timerState[el.key];
             if not bb then return end;
 
-            -- Helper: set text + colour on a fontstring + its shadow layers
             local function SetTimerDisplay(fs, layers, text, r, g, b)
                 fs:SetText(text);
                 fs:SetTextColor(r, g, b, 1);
@@ -2230,10 +2183,7 @@ do
                 end
             end
 
-            -- Is there an active (different) totem ticking?
             local setTotem = GetCurrentTotem(el.dbKey);
-            -- In ZG/Strath mode the water totem is overridden; treat the
-            -- override as the effective set totem so it shows on the main button.
             if el.key == "Water" then
                 if settings.STRATHOLME_MODE then
                     setTotem = "Disease Cleansing Totem";
@@ -2248,7 +2198,6 @@ do
                 local remaining = ts.duration - (now - ts.startTime);
 
                 if ts.duration == 0 or remaining <= 0 then
-                    -- Timer expired or no duration: clear everything
                     timerState[el.key] = nil;
                     HideTimerDisplay(bb.timer, bb.timerLayers);
                     if bb.activeBtn then bb.activeBtn:Hide() end;
@@ -2257,10 +2206,7 @@ do
                     local r, g, b = TimerColor(remaining, ts.duration);
 
                     if showActive then
-                        -- Active totem differs from set totem:
-                        -- main button shows set totem (no timer on it)
                         HideTimerDisplay(bb.timer, bb.timerLayers);
-                        -- active button shows the running totem + timer
                         if bb.activeBtn then
                             bb.activeIcon:SetTexture(
                                 TOTEM_ICONS[activeTotem] or FALLBACK_ICON);
@@ -2268,7 +2214,6 @@ do
                             bb.activeBtn:Show();
                         end
                     else
-                        -- Active == set: show timer on main button, hide active button
                         SetTimerDisplay(bb.timer, bb.timerLayers, text, r, g, b);
                         if bb.activeBtn then bb.activeBtn:Hide() end;
                     end
@@ -2293,7 +2238,6 @@ do
         end
     end
 
-    -- Deferred close: gives 120ms for mouse to travel into the flyout
     local function ScheduleClose(key)
         closeScheduled[key] = true;
         local elapsed = 0;
@@ -2309,25 +2253,19 @@ do
         closeScheduled[key] = false;
     end
 
-    -- Update bar button icon from current settings.
-    -- Called each time the bar is shown or a selection is made.
-    -- Icon is set here (not at build time) to avoid the load-order
-    -- flicker where SetTexture races against the texture cache.
     local function RefreshBarIcon(key, dbKey, iconTex)
         local cur = GetCurrentTotem(dbKey);
         local path = (cur and TOTEM_ICONS[cur]) or FALLBACK_ICON;
         iconTex:SetTexture(path);
     end
 
-    -- --------------------------------------------------------
     -- BUILD COLUMNS
-    -- --------------------------------------------------------
     for colIdx = 1, table.getn(ELEMENTS) do
-        local elDef     = ELEMENTS[colIdx];
+        local elDef      = ELEMENTS[colIdx];
         local elementKey = elDef.key;
         local dbKey      = elDef.dbKey;
 
-        -- ---- MAIN BAR BUTTON ----
+        -- MAIN BAR BUTTON
         local mainBtn = CreateFrame("Button", nil, bar);
         mainBtn:SetWidth(BAR_BTN_SIZE);
         mainBtn:SetHeight(BAR_BTN_SIZE);
@@ -2335,18 +2273,14 @@ do
             BAR_PADDING + (colIdx-1) * (BAR_BTN_SIZE + BAR_PADDING),
             -BAR_PADDING);
 
-        -- Slot border background
         local slotTex = mainBtn:CreateTexture(nil, "BACKGROUND");
         slotTex:SetTexture("Interface\\Buttons\\UI-EmptySlot");
         slotTex:SetAllPoints(mainBtn);
 
-        -- Icon as a plain ARTWORK texture — never touched at build time,
-        -- only set via RefreshBarIcon to avoid cache-race flicker.
         local barIcon = mainBtn:CreateTexture(nil, "ARTWORK");
         barIcon:SetWidth(BAR_BTN_SIZE - 6);
         barIcon:SetHeight(BAR_BTN_SIZE - 6);
         barIcon:SetPoint("CENTER", mainBtn, "CENTER", 0, 0);
-        -- leave texture unset here; RefreshBarIcon sets it on Show
 
         local hiTex = mainBtn:CreateTexture(nil, "HIGHLIGHT");
         hiTex:SetTexture("Interface\\Buttons\\ButtonHilight-Square");
@@ -2354,9 +2288,6 @@ do
         hiTex:SetBlendMode("ADD");
         mainBtn:SetHighlightTexture(hiTex);
 
-
-
-        -- Timer: single FontString with THICKOUTLINE for clean black border
         local timerText = mainBtn:CreateFontString(nil, "OVERLAY");
         timerText:SetFont("Fonts\\FRIZQT__.TTF", 14, "THICKOUTLINE");
         timerText:SetPoint("CENTER", mainBtn, "CENTER", 0, 0);
@@ -2364,12 +2295,11 @@ do
         timerText:Hide();
         local timerLayers = {};
 
-        -- ---- ACTIVE TOTEM BUTTON (shown below when active != set) ----
+        -- ACTIVE TOTEM BUTTON
         local activeBtn = CreateFrame("Button", nil, bar);
         activeBtn:SetWidth(ACTIVE_BTN_SIZE);
         activeBtn:SetHeight(ACTIVE_BTN_SIZE);
-        activeBtn:SetPoint("TOP", mainBtn, "BOTTOM",
-            0, -BAR_PADDING);
+        activeBtn:SetPoint("TOP", mainBtn, "BOTTOM", 0, -BAR_PADDING);
 
         local aSlot = activeBtn:CreateTexture(nil, "BACKGROUND");
         aSlot:SetTexture("Interface\\Buttons\\UI-EmptySlot");
@@ -2386,7 +2316,6 @@ do
         aHi:SetBlendMode("ADD");
         activeBtn:SetHighlightTexture(aHi);
 
-        -- Timer layers for the active button
         local aTimer = activeBtn:CreateFontString(nil, "OVERLAY");
         aTimer:SetFont("Fonts\\FRIZQT__.TTF", 10, "THICKOUTLINE");
         aTimer:SetPoint("CENTER", activeBtn, "CENTER", 0, 0);
@@ -2394,7 +2323,6 @@ do
         aTimer:Hide();
         local aTimerLayers = {};
 
-        -- Cast on left-click (same as main button)
         activeBtn:SetScript("OnClick", function()
             local ts = timerState[elementKey];
             if ts and ts.totemName then
@@ -2407,14 +2335,15 @@ do
             if ts and ts.totemName then ShowSpellTip(activeBtn, ts.totemName) end;
         end);
         activeBtn:SetScript("OnLeave", function() tt:Hide() end);
-
         activeBtn:Hide();
 
-        barButtons[elementKey] = { btn=mainBtn, icon=barIcon, timer=timerText, timerLayers=timerLayers,
-                                   activeBtn=activeBtn, activeIcon=aIcon,
-                                   activeTimer=aTimer, activeTimerLayers=aTimerLayers };
+        barButtons[elementKey] = {
+            btn=mainBtn, icon=barIcon, timer=timerText, timerLayers=timerLayers,
+            activeBtn=activeBtn, activeIcon=aIcon,
+            activeTimer=aTimer, activeTimerLayers=aTimerLayers
+        };
 
-        -- ---- FLYOUT FRAME ----
+        -- FLYOUT FRAME
         local maxRows = table.getn(elDef.totems);
         local flyH    = FLY_PADDING * 2 + maxRows * FLY_ROW_H;
 
@@ -2426,12 +2355,10 @@ do
         fly:Hide();
         flyoutFrames[elementKey] = fly;
 
-        -- dark bg
         local flyBg = fly:CreateTexture(nil, "BACKGROUND");
         flyBg:SetTexture(0, 0, 0, 0.82);
         flyBg:SetAllPoints(fly);
 
-        -- element-coloured border
         for _, anchor in ipairs({"TOP","BOTTOM","LEFT","RIGHT"}) do
             local b = fly:CreateTexture(nil, "BORDER");
             b:SetTexture(elDef.r, elDef.g, elDef.b, 0.7);
@@ -2449,11 +2376,10 @@ do
         fly:SetScript("OnLeave", function() ScheduleClose(elementKey) end);
         fly:SetScript("OnEnter", function() CancelClose(elementKey) end);
 
-        -- ---- FLYOUT BUTTONS ----
+        -- FLYOUT BUTTONS
         local flyBtns = {};
 
         for slotIdx = 1, table.getn(elDef.totems) do
-            -- Capture loop vars explicitly (Lua 5.0 closure requirement)
             local thisTotem = elDef.totems[slotIdx];
             local thisSlot  = slotIdx;
 
@@ -2463,13 +2389,10 @@ do
             fb:SetPoint("TOP", fly, "TOP",
                 0, -(FLY_PADDING + (thisSlot-1) * FLY_ROW_H));
 
-            -- slot border
             local fbSlot = fb:CreateTexture(nil, "BACKGROUND");
             fbSlot:SetTexture("Interface\\Buttons\\UI-EmptySlot");
             fbSlot:SetAllPoints(fb);
 
-            -- Icon: plain ARTWORK texture, set in fly:SetScript("OnShow")
-            -- to avoid the cache-race flicker seen when setting at build time.
             local fbIcon = fb:CreateTexture(nil, "ARTWORK");
             fbIcon:SetWidth(FLY_BTN_SIZE - 4);
             fbIcon:SetHeight(FLY_BTN_SIZE - 4);
@@ -2494,10 +2417,8 @@ do
 
             fb:SetScript("OnClick", function()
                 ApplyTotemSelection(elementKey, thisTotem);
-                -- Update bar icon immediately
                 barButtons[elementKey].icon:SetTexture(
                     TOTEM_ICONS[thisTotem] or FALLBACK_ICON);
-                -- Mutual exclusion: uncheck all, check this one
                 for i = 1, table.getn(flyBtns) do
                     if flyBtns[i].totemName == thisTotem then
                         flyBtns[i]:SetChecked(1);
@@ -2521,8 +2442,6 @@ do
             flyBtns[thisSlot] = fb;
         end
 
-        -- Set all flyout icons when the flyout opens (not at build time).
-        -- This is the key fix for the cache-race flicker.
         fly:SetScript("OnShow", function()
             local cur = GetCurrentTotem(dbKey);
             for i = 1, table.getn(flyBtns) do
@@ -2536,10 +2455,9 @@ do
             end
         end);
 
-        -- ---- OPEN FLYOUT ON HOVER ----
+        -- HOVER TO OPEN FLYOUT
         mainBtn:SetScript("OnEnter", function()
             CancelClose(elementKey);
-            -- Close other flyouts
             for i = 1, table.getn(ELEMENTS) do
                 if ELEMENTS[i].key ~= elementKey then
                     CloseFlyout(ELEMENTS[i].key);
@@ -2554,22 +2472,42 @@ do
             ScheduleClose(elementKey);
         end);
 
+        -- CLICK HANDLER
+        -- Right-click toggles between the 2 most common totems per element.
+        -- If the current totem is neither of the pair, opens the flyout instead.
+        local TOGGLE_PAIRS = {
+            ["Fire"]  = { "Searing Totem",            "Magma Totem" },
+            ["Water"] = { "Mana Spring Totem",         "Healing Stream Totem" },
+            ["Earth"] = { "Strength of Earth Totem",   "Stoneskin Totem" },
+            ["Air"]   = { "Windfury Totem",             "Grace of Air Totem" },
+        };
+
         mainBtn:RegisterForClicks("LeftButtonUp", "RightButtonUp");
         mainBtn:SetScript("OnClick", function()
             if arg1 == "RightButton" then
-                -- Right-click: toggle flyout to change selection
-                if fly:IsVisible() then
-                    CloseFlyout(elementKey);
+                local pair = TOGGLE_PAIRS[elementKey];
+                local cur  = GetCurrentTotem(dbKey);
+                if pair and (cur == pair[1] or cur == pair[2]) then
+                    -- Toggle to the other one
+                    local next = (cur == pair[1]) and pair[2] or pair[1];
+                    ApplyTotemSelection(elementKey, next);
+                    barButtons[elementKey].icon:SetTexture(
+                        TOTEM_ICONS[next] or FALLBACK_ICON);
                 else
-                    CancelClose(elementKey);
-                    for i = 1, table.getn(ELEMENTS) do
-                        if ELEMENTS[i].key ~= elementKey then
-                            CloseFlyout(ELEMENTS[i].key);
+                    -- Totem not in the pair: open flyout normally
+                    if fly:IsVisible() then
+                        CloseFlyout(elementKey);
+                    else
+                        CancelClose(elementKey);
+                        for i = 1, table.getn(ELEMENTS) do
+                            if ELEMENTS[i].key ~= elementKey then
+                                CloseFlyout(ELEMENTS[i].key);
+                            end
                         end
+                        fly:ClearAllPoints();
+                        fly:SetPoint("BOTTOM", mainBtn, "TOP", 0, 4);
+                        fly:Show();
                     end
-                    fly:ClearAllPoints();
-                    fly:SetPoint("BOTTOM", mainBtn, "TOP", 0, 4);
-                    fly:Show();
                 end
             else
                 -- Left-click: cast the current totem
@@ -2585,9 +2523,7 @@ do
         end);
     end
 
-    -- --------------------------------------------------------
     -- SLASH COMMAND
-    -- --------------------------------------------------------
     SLASH_BPMENU1 = "/bpmenu";
     SlashCmdList["BPMENU"] = function()
         if bar:IsVisible() then
@@ -2599,18 +2535,15 @@ do
         PlaySound("igMainMenuOption");
     end;
 
-    -- Start a countdown timer on a bar button
     function BP_TotemBar_StartTimer(elementKey, totemName)
         local dur = TOTEM_DURATIONS[totemName];
         if dur and dur > 0 then
             timerState[elementKey] = { startTime=GetTime(), duration=dur, totemName=totemName };
         else
-            -- No duration but still track active totem name
             timerState[elementKey] = { startTime=GetTime(), duration=0, totemName=totemName };
         end
     end
 
-    -- Stop all timers (e.g. on Totemic Recall)
     function BP_TotemBar_StopAllTimers()
         for i = 1, table.getn(ELEMENTS) do
             local key = ELEMENTS[i].key;
@@ -2626,21 +2559,17 @@ do
         end
     end
 
-    -- Call this after toggling ZG or Strath mode to update the Water button
     function BP_TotemBar_UpdateMode()
         local waterBtn = barButtons["Water"];
         if not waterBtn then return end;
 
         if settings.STRATHOLME_MODE then
-            -- Disease cleanse override
             waterBtn.icon:SetTexture(TOTEM_ICONS["Disease Cleansing Totem"] or FALLBACK_ICON);
             if DoiteGlow then DoiteGlow.Start(waterBtn.btn); end
         elseif settings.ZG_MODE then
-            -- Poison cleanse override
             waterBtn.icon:SetTexture(TOTEM_ICONS["Poison Cleansing Totem"] or FALLBACK_ICON);
             if DoiteGlow then DoiteGlow.Start(waterBtn.btn); end
         else
-            -- Normal: show actual selected water totem
             local cur = GetCurrentTotem("WATER_TOTEM");
             waterBtn.icon:SetTexture((cur and TOTEM_ICONS[cur]) or FALLBACK_ICON);
             if DoiteGlow then DoiteGlow.Stop(waterBtn.btn); end
@@ -2654,10 +2583,117 @@ do
             local path = (cur and TOTEM_ICONS[cur]) or FALLBACK_ICON;
             barButtons[el.key].icon:SetTexture(path);
         end
-        -- Apply mode override on top
         BP_TotemBar_UpdateMode();
     end
 
     BP_TotemBar_RefreshIcons();
+
+    -- --------------------------------------------------------
+    -- TOGGLE BUTTONS  (small row below the active-totem strip)
+    -- --------------------------------------------------------
+    local TOGGLE_BTN_SIZE = 14;
+    local TOGGLE_PADDING  = 2;
+
+    local toggleDefs = {
+        { key="ZG",        label="Z", tip="Zul'Gurub mode",  setting="ZG_MODE",
+          onToggle = function()
+              if settings.STRATHOLME_MODE then
+                  settings.STRATHOLME_MODE = false;
+                  BackpackerDB.STRATHOLME_MODE = false;
+              end
+              ToggleSetting("ZG_MODE", "Zul'Gurub mode");
+              ResetWaterTotemState();
+              if BP_TotemBar_UpdateMode then BP_TotemBar_UpdateMode(); end;
+          end },
+        { key="ST",        label="S", tip="Stratholme mode", setting="STRATHOLME_MODE",
+          onToggle = function()
+              if settings.ZG_MODE then
+                  settings.ZG_MODE = false;
+                  BackpackerDB.ZG_MODE = false;
+              end
+              ToggleSetting("STRATHOLME_MODE", "Stratholme mode");
+              ResetWaterTotemState();
+              if BP_TotemBar_UpdateMode then BP_TotemBar_UpdateMode(); end;
+          end },
+        { key="CH",        label="C", tip="Chain Heal",      setting="CHAIN_HEAL_ENABLED",
+          onToggle = function() ToggleSetting("CHAIN_HEAL_ENABLED", "Chain Heal"); end },
+        { key="FL",        label="F", tip="Follow mode",     setting="FOLLOW_ENABLED",
+          onToggle = function() ToggleSetting("FOLLOW_ENABLED", "Follow functionality"); end },
+    };
+
+    local totalToggleW = table.getn(toggleDefs) * (TOGGLE_BTN_SIZE + TOGGLE_PADDING) - TOGGLE_PADDING;
+
+    -- Reuse the shared tooltip already created above (BP_MenuTT / tt)
+    local function ShowToggleTip(anchor, text)
+        tt:ClearLines();
+        tt:SetOwner(anchor, "ANCHOR_RIGHT");
+        tt:AddLine(text, 1, 1, 1);
+        tt:Show();
+    end
+
+    local toggleButtons = {};
+
+    local function RefreshToggleColors()
+        for i = 1, table.getn(toggleDefs) do
+            local def = toggleDefs[i];
+            local btn = toggleButtons[def.key];
+            if btn then
+                if settings[def.setting] then
+                    btn.bg:SetTexture(0.15, 0.65, 0.15, 0.85);  -- green: active
+                else
+                    btn.bg:SetTexture(0.12, 0.12, 0.12, 0.75);  -- dark: inactive
+                end
+            end
+        end
+    end
+
+    -- Expose so ToggleSetting callers outside this block can refresh
+    function BP_TotemBar_RefreshToggles()
+        RefreshToggleColors();
+    end
+
+    for i = 1, table.getn(toggleDefs) do
+        local def = toggleDefs[i];
+        local xOff = BAR_PADDING + (i-1) * (TOGGLE_BTN_SIZE + TOGGLE_PADDING);
+
+        local btn = CreateFrame("Button", nil, bar);
+        btn:SetWidth(TOGGLE_BTN_SIZE);
+        btn:SetHeight(TOGGLE_BTN_SIZE);
+        -- sits just above the main totem buttons
+        btn:SetPoint("BOTTOMLEFT", bar, "TOPLEFT",
+            xOff,
+            -(TOGGLE_PADDING));
+
+        local bg = btn:CreateTexture(nil, "BACKGROUND");
+        bg:SetAllPoints(btn);
+        bg:SetTexture(0.12, 0.12, 0.12, 0.75);
+        btn.bg = bg;
+
+        local lbl = btn:CreateFontString(nil, "OVERLAY");
+        lbl:SetFont("Fonts\\FRIZQT__.TTF", 8, "OUTLINE");
+        lbl:SetAllPoints(btn);
+        lbl:SetJustifyH("CENTER");
+        lbl:SetJustifyV("MIDDLE");
+        lbl:SetTextColor(0.75, 0.75, 0.75, 1);
+        lbl:SetText(def.label);
+
+        local hiTex = btn:CreateTexture(nil, "HIGHLIGHT");
+        hiTex:SetTexture(1, 1, 1, 0.15);
+        hiTex:SetAllPoints(btn);
+        btn:SetHighlightTexture(hiTex);
+
+        btn:SetScript("OnClick", function()
+            def.onToggle();
+            RefreshToggleColors();
+        end);
+        btn:SetScript("OnEnter", function() ShowToggleTip(btn, def.tip) end);
+        btn:SetScript("OnLeave", function() tt:Hide() end);
+
+        toggleButtons[def.key] = btn;
+    end
+
+    -- Set initial colours
+    RefreshToggleColors();
+
     DEFAULT_CHAT_FRAME:AddMessage("Backpacker: /bpmenu ready.");
 end
