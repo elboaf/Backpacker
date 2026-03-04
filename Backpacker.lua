@@ -13,7 +13,7 @@ BackpackerDB = BackpackerDB or {
     PET_HEALING_ENABLED = false,
     AUTO_SHIELD_MODE = false,
     SHIELD_TYPE = "Water Shield",
-    FARMING_MODE = false,
+    STRICT_MODE = true,
     EARTH_TOTEM = "Strength of Earth Totem",
     FIRE_TOTEM = "Flametongue Totem",
     AIR_TOTEM = "Windfury Totem",
@@ -33,7 +33,7 @@ local settings = {
     PET_HEALING_ENABLED = BackpackerDB.PET_HEALING_ENABLED,
     AUTO_SHIELD_MODE = BackpackerDB.AUTO_SHIELD_MODE,
     SHIELD_TYPE = BackpackerDB.SHIELD_TYPE or "Water Shield",
-    FARMING_MODE = BackpackerDB.FARMING_MODE or false,
+    STRICT_MODE = BackpackerDB.STRICT_MODE ~= false,
     EARTH_TOTEM = BackpackerDB.EARTH_TOTEM,
     FIRE_TOTEM = BackpackerDB.FIRE_TOTEM,
     AIR_TOTEM = BackpackerDB.AIR_TOTEM,
@@ -45,7 +45,7 @@ local settings = {
 local SPELL_ID_LOOKUP = {
     ["Water Shield"] = 51536,
     ["Lightning Shield"] = 10432,
-    ["Earth Shield"] = 45525,
+    ["Earth Shield"] = 51526,
     ["Strength of Earth"] = 10441,
     ["Stoneskin"] = 10405,
     ["Flametongue Totem"] = 16388,
@@ -118,10 +118,38 @@ local TOTEM_DEFINITIONS = {
     ["Disease Cleansing Totem"] = { buff=nil,                  element="water" },
 };
 
+-- Reverse lookup: texture path (lowercase) -> totem name
+-- Used by the UseAction hook since vanilla has no GetActionType/GetActionInfo
+local TOTEM_TEXTURE_TO_NAME = {
+    ["interface\\icons\\spell_nature_earthbindtotem"]        = "Strength of Earth Totem",
+    ["interface\\icons\\spell_nature_stoneskintotem"]        = "Stoneskin Totem",
+    ["interface\\icons\\spell_nature_tremortotem"]           = "Tremor Totem",
+    ["interface\\icons\\spell_nature_stoneclawtotem"]        = "Stoneclaw Totem",
+    ["interface\\icons\\spell_nature_strengthofearthtotem02"]= "Earthbind Totem",
+    ["interface\\icons\\spell_nature_guardianward"]          = "Flametongue Totem",
+    ["interface\\icons\\spell_frostresistancetotem_01"]      = "Frost Resistance Totem",
+    ["interface\\icons\\spell_fire_sealoffire"]              = "Fire Nova Totem",
+    ["interface\\icons\\spell_fire_searingtotem"]            = "Searing Totem",
+    ["interface\\icons\\spell_fire_selfdestruct"]            = "Magma Totem",
+    ["interface\\icons\\spell_nature_windfury"]              = "Windfury Totem",
+    ["interface\\icons\\spell_nature_invisibilitytotem"]     = "Grace of Air Totem",
+    ["interface\\icons\\spell_nature_natureresistancetotem"] = "Nature Resistance Totem",
+    ["interface\\icons\\spell_nature_groundingtotem"]        = "Grounding Totem",
+    ["interface\\icons\\spell_nature_removecurse"]           = "Sentry Totem",
+    ["interface\\icons\\spell_nature_earthbind"]             = "Windwall Totem",
+    ["interface\\icons\\spell_nature_brilliance"]            = "Tranquil Air Totem",
+    ["interface\\icons\\spell_nature_manaregentotem"]        = "Mana Spring Totem",
+    ["interface\\icons\\inv_spear_04"]                       = "Healing Stream Totem",
+    ["interface\\icons\\spell_fireresistancetotem_01"]       = "Fire Resistance Totem",
+    ["interface\\icons\\spell_nature_poisoncleansingtotem"]  = "Poison Cleansing Totem",
+    ["interface\\icons\\spell_nature_diseasecleansingtotem"] = "Disease Cleansing Totem",
+    ["interface\\icons\\spell_shaman_totemrecall"]           = "Totemic Recall",
+};
+
 local SHIELD_DEFINITIONS = {
-    ["Water Shield"]    = { spell="Water Shield",    texture="watershield",   baseCharges=3, spellId=51536 },
-    ["Lightning Shield"]= { spell="Lightning Shield",texture="lightningshield",baseCharges=3,spellId=10432 },
-    ["Earth Shield"]    = { spell="Earth Shield",    texture="skinofearth",   baseCharges=3, spellId=45525 },
+    ["Water Shield"]     = { spellId=51536 },
+    ["Lightning Shield"] = { spellId=10432 },
+    ["Earth Shield"]     = { spellId=51526 },
 };
 
 local lastTotemRecallTime = 0;
@@ -131,12 +159,110 @@ local lastTotemCastTime = 0;
 local lastFireNovaCastTime = 0;
 local FIRE_NOVA_DURATION = 5;
 local pendingTotems = {};
-local TOTEM_RECALL_COOLDOWN = 3;
-local TOTEM_RECALL_ACTIVATION_COOLDOWN = 3;
 local TOTEM_VERIFICATION_TIME = 3;
 local TOTEM_CAST_DELAY = 0.35;
 local lastShieldCheckTime = 0;
 local SHIELD_CHECK_INTERVAL = 1.0;
+
+-- External cast detection: updates totemState when a totem/recall is cast from
+-- outside Backpacker (keybind, macro, other addon). Totem drops are validated
+-- by SuperWoW GUID confirmation before the bar timer starts. Totemic Recall
+-- is gated on its fixed 6 second cooldown.
+local bpInternalCast = false;
+
+local function BPCast(spellName, onSelf)
+    bpInternalCast = true;
+    CastSpellByName(spellName, onSelf);
+    bpInternalCast = false;
+end
+
+-- Forward declarations
+local OnExternalTotemCast;
+local OnExternalTotemicRecall;
+
+local function HandleExternalSpellName(spellName)
+    if not spellName then return end
+    local cleanName = string.gsub(spellName, "%(.+%)", "");
+    cleanName = string.gsub(cleanName, "^%s*(.-)%s*$", "%1");
+
+    -- Exact match first
+    local resolvedName = nil;
+    if TOTEM_DEFINITIONS[cleanName] then
+        resolvedName = cleanName;
+    elseif cleanName == "Totemic Recall" then
+        -- handled below
+    else
+        -- Fuzzy fallback: handles Roman numeral rank suffixes (e.g. "Magma Totem IV")
+        -- and any subtle whitespace/encoding differences.
+        -- Check both directions: table key starts with input, or input starts with table key.
+        local lowerClean = string.lower(cleanName);
+        for k in pairs(TOTEM_DEFINITIONS) do
+            local lowerK = string.lower(k);
+            if lowerK == lowerClean or
+               string.find(lowerClean, lowerK, 1, true) == 1 or
+               string.find(lowerK, lowerClean, 1, true) == 1 then
+                resolvedName = k;
+                break;
+            end
+        end
+    end
+
+    if resolvedName then
+        if settings.DEBUG_MODE then
+            PrintMessage("External totem attempt: ");
+        end
+        OnExternalTotemCast(resolvedName);
+    elseif cleanName == "Totemic Recall" then
+        if settings.DEBUG_MODE then
+            DEFAULT_CHAT_FRAME:AddMessage("Backpacker: External Totemic Recall attempt", 1, 1, 0);
+        end
+        OnExternalTotemicRecall();
+    elseif settings.DEBUG_MODE then
+        -- Log unrecognized spell names to help diagnose future mismatches
+        PrintMessage("Unrecognized spell in hook: '");
+    end
+end
+
+-- Hook CastSpellByName: catches /cast macros and direct API calls
+local _origCastSpellByName = CastSpellByName;
+CastSpellByName = function(spellName, onSelf)
+    if not bpInternalCast then HandleExternalSpellName(spellName) end
+    _origCastSpellByName(spellName, onSelf);
+end
+
+-- Hook CastSpell: catches spellbook casts
+-- spellbookTabNum is the book type; BOOKTYPE_SPELL = "spell"
+local _origCastSpell = CastSpell;
+CastSpell = function(spellId, spellbookTabNum)
+    if not bpInternalCast and spellbookTabNum == BOOKTYPE_SPELL then
+        local spellName = GetSpellName(spellId, BOOKTYPE_SPELL);
+        HandleExternalSpellName(spellName);
+    end
+    _origCastSpell(spellId, spellbookTabNum);
+end
+
+-- Hook UseAction: catches action bar addon clicks (BartenderII, etc.)
+-- vanilla has no GetActionType/GetActionInfo so we identify the spell via texture
+local _origUseAction = UseAction;
+UseAction = function(slotId, checkCursor, onSelf)
+    if not bpInternalCast then
+        local texture = GetActionTexture(slotId);
+        if texture then
+            local spellName = TOTEM_TEXTURE_TO_NAME[string.lower(texture)];
+            if spellName then
+                if settings.DEBUG_MODE then
+                    PrintMessage("External totem attempt (UseAction): ");
+                end
+                if spellName == "Totemic Recall" then
+                    OnExternalTotemicRecall();
+                else
+                    OnExternalTotemCast(spellName);
+                end
+            end
+        end
+    end
+    _origUseAction(slotId, checkCursor, onSelf);
+end
 
 local function InitializeTotemState()
     return {
@@ -169,6 +295,11 @@ swFrame:SetScript("OnEvent", function()
                     totemState[i].serverVerified = true
                     totemState[i].unitId = unitId
                     if tx and ty then totemPositions[totem.element] = { x=tx, y=ty } end
+                    if BP_TotemBar_StartTimer then
+                        local elCap = string.upper(string.sub(totem.element,1,1))..string.sub(totem.element,2);
+                        BP_TotemBar_StartTimer(elCap, totem.spell);
+                    end
+                    if BP_TotemBar_RefreshIcons then BP_TotemBar_RefreshIcons() end
                     if settings.DEBUG_MODE then
                         DEFAULT_CHAT_FRAME:AddMessage("Backpacker: Matched "..totem.element.." totem via SuperWoW", 0,1,0)
                     end
@@ -203,7 +334,6 @@ local function CheckTotemRange()
             local effectiveRange = (spellName and TOTEM_RANGE_OVERRIDE[spellName]) or TOTEM_RANGE
             local dist = GetDistance(px, py, pos.x, pos.y)
             if dist and dist > effectiveRange then
-                PrintMessage(element.." totem out of range ("..math.floor(dist).." yards)")
                 for i, totem in ipairs(totemState) do
                     if totem.element == element then
                         totemState[i].locallyVerified = false
@@ -223,71 +353,9 @@ local function CheckTotemRange()
     return outOfRange
 end
 
-local function GetStableShieldsRank()
-    for tabIndex = 1, GetNumTalentTabs() do
-        for talentIndex = 1, GetNumTalents(tabIndex) do
-            local name, _, _, _, rank = GetTalentInfo(tabIndex, talentIndex)
-            if name == "Stable Shields" then return rank end
-        end
-    end
-    return 0
-end
-
-local function GetMaxShieldCharges(shieldType)
-    local shieldDef = SHIELD_DEFINITIONS[shieldType]
-    if not shieldDef then return 3 end
-    local bonusCharges = 0
-    if shieldType == "Water Shield" or shieldType == "Lightning Shield" then
-        bonusCharges = GetStableShieldsRank() * 2
-    end
-    return shieldDef.baseCharges + bonusCharges
-end
-
-local function GetCurrentShieldCharges(shieldType)
-    local shieldDef = SHIELD_DEFINITIONS[shieldType]
-    if not shieldDef then return 0 end
-    local texturePattern = shieldDef.texture
-    for i = 0, 15 do
-        local buffIndex = GetPlayerBuff(i, "HELPFUL")
-        if buffIndex >= 0 then
-            local texture = GetPlayerBuffTexture(buffIndex)
-            local applications = GetPlayerBuffApplications(buffIndex)
-            if texture and string.find(string.lower(texture), texturePattern) then
-                return applications or 1
-            end
-        end
-    end
-    return 0
-end
-
-local function IsShieldActive(shieldName)
-    return HasBuff(shieldName, "player");
-end
-
-local function GetFarmingModeShield()
-    local healthPercent = (UnitHealth("player") / UnitHealthMax("player")) * 100
-    local manaPercent   = (UnitMana("player")   / UnitManaMax("player"))   * 100
-    if IsShieldActive("Earth Shield") then return "Earth Shield" end
-    if manaPercent > healthPercent and healthPercent < 70 then
-        return "Earth Shield"
-    else
-        return "Water Shield"
-    end
-end
-
 local function PrintMessage(message)
     if settings.DEBUG_MODE then
         DEFAULT_CHAT_FRAME:AddMessage("Backpacker: "..message);
-    end
-end
-
-local lastRecallMessageTime = 0;
-local RECALL_MESSAGE_COOLDOWN = 6;
-local function PrintRecallMessage()
-    local now = GetTime();
-    if now - lastRecallMessageTime >= RECALL_MESSAGE_COOLDOWN then
-        lastRecallMessageTime = now;
-        DEFAULT_CHAT_FRAME:AddMessage("Totems: RECALLED", 0, 1, 0);
     end
 end
 
@@ -312,41 +380,20 @@ local function PrintShieldSetMessage(msg)
 end
 
 local function CheckAndRefreshShield()
-    if not settings.FARMING_MODE then
-        if not settings.AUTO_SHIELD_MODE then return false end
-    end
+    if not settings.AUTO_SHIELD_MODE then return false end
     local currentTime = GetTime();
     if currentTime - lastShieldCheckTime < SHIELD_CHECK_INTERVAL then return false end
     lastShieldCheckTime = currentTime;
-    local shieldSpell
-    if settings.FARMING_MODE then
-        shieldSpell = GetFarmingModeShield()
-    else
-        shieldSpell = settings.SHIELD_TYPE
-    end
-    local currentShield, currentCharges = nil, 0
-    if IsShieldActive("Earth Shield") then
-        currentShield = "Earth Shield"; currentCharges = GetCurrentShieldCharges("Earth Shield")
-    elseif IsShieldActive("Water Shield") then
-        currentShield = "Water Shield"; currentCharges = GetCurrentShieldCharges("Water Shield")
-    elseif IsShieldActive("Lightning Shield") then
-        currentShield = "Lightning Shield"; currentCharges = GetCurrentShieldCharges("Lightning Shield")
-    end
-    if settings.FARMING_MODE then
-        if currentShield ~= shieldSpell then
-            CastSpellByName(shieldSpell);
-            PrintShieldMessage("Farming mode: Switching to "..shieldSpell);
-            lastTotemCastTime = currentTime;
-            return true;
-        end
-    else
-        local maxCharges = GetMaxShieldCharges(shieldSpell);
-        if currentShield ~= shieldSpell or currentCharges < 1 or currentCharges < maxCharges then
-            CastSpellByName(shieldSpell);
-            PrintShieldMessage(shieldSpell.." needs refreshing ("..currentCharges.."/"..maxCharges.." charges)");
-            lastTotemCastTime = currentTime;
-            return true;
-        end
+    local shieldSpell = settings.SHIELD_TYPE;
+    if not shieldSpell then return false end
+
+    -- Detect active shield purely by spellId via HasBuff -- no charge counting
+    local shieldActive = HasBuff(shieldSpell, "player");
+    if not shieldActive then
+        BPCast(shieldSpell);
+        PrintShieldMessage(shieldSpell.." not active -- casting");
+        lastTotemCastTime = currentTime;
+        return true;
     end
     return false;
 end
@@ -354,11 +401,7 @@ end
 local function ToggleSetting(settingName, displayName)
     settings[settingName] = not settings[settingName];
     BackpackerDB[settingName] = settings[settingName];
-    if settings[settingName] then
-        DEFAULT_CHAT_FRAME:AddMessage("Backpacker: "..displayName.." enabled.");
-    else
-        DEFAULT_CHAT_FRAME:AddMessage("Backpacker: "..displayName.." disabled.");
-    end
+    PrintMessage(displayName..(settings[settingName] and " enabled." or " disabled."));
 end
 
 local function ResetTotemState()
@@ -392,47 +435,42 @@ local function DropTotems()
     local currentTime = GetTime();
     if superwowEnabled and CheckTotemRange() then lastAllTotemsActiveTime = 0 end
     if CheckAndRefreshShield() then return end
-    if currentTime - lastTotemRecallTime < TOTEM_RECALL_COOLDOWN then
-        PrintMessage("Totems on cooldown after recall.");
-        return;
-    end
     if currentTime - lastTotemCastTime < TOTEM_CAST_DELAY then return end
 
     for i, totem in ipairs(totemState) do
+        local configuredSpell;
         if totem.element == "air" then
-            totemState[i].spell = settings.AIR_TOTEM;
-            totemState[i].buff  = TOTEM_DEFINITIONS[settings.AIR_TOTEM] and TOTEM_DEFINITIONS[settings.AIR_TOTEM].buff;
+            configuredSpell = settings.AIR_TOTEM;
         elseif totem.element == "fire" then
-            if settings.FARMING_MODE then
-                totemState[i].spell = nil; totemState[i].buff = nil;
-            else
-                totemState[i].spell = settings.FIRE_TOTEM;
-                totemState[i].buff  = TOTEM_DEFINITIONS[settings.FIRE_TOTEM] and TOTEM_DEFINITIONS[settings.FIRE_TOTEM].buff;
-            end
+            configuredSpell = settings.FIRE_TOTEM;
         elseif totem.element == "earth" then
-            totemState[i].spell = settings.EARTH_TOTEM;
-            totemState[i].buff  = TOTEM_DEFINITIONS[settings.EARTH_TOTEM] and TOTEM_DEFINITIONS[settings.EARTH_TOTEM].buff;
+            configuredSpell = settings.EARTH_TOTEM;
         elseif totem.element == "water" then
-            if settings.FARMING_MODE then
-                totemState[i].spell = nil; totemState[i].buff = nil;
-            elseif settings.STRATHOLME_MODE then
-                totemState[i].spell = "Disease Cleansing Totem"; totemState[i].buff = nil;
-            elseif settings.ZG_MODE then
-                totemState[i].spell = "Poison Cleansing Totem"; totemState[i].buff = nil;
-            else
-                totemState[i].spell = settings.WATER_TOTEM;
-                totemState[i].buff  = TOTEM_DEFINITIONS[settings.WATER_TOTEM] and TOTEM_DEFINITIONS[settings.WATER_TOTEM].buff;
-            end
+            if settings.STRATHOLME_MODE then configuredSpell = "Disease Cleansing Totem"
+            elseif settings.ZG_MODE then     configuredSpell = "Poison Cleansing Totem"
+            else                             configuredSpell = settings.WATER_TOTEM end
         end
+
+        -- In strict mode, if a manually dropped totem differs from the configured
+        -- one, reset it so PHASE 2 will recast with the correct totem.
+        if settings.STRICT_MODE and totem.spell ~= configuredSpell and totem.locallyVerified then
+            PrintMessage("Strict mode: resetting "..totem.element.." ("..tostring(totem.spell).." -> "..tostring(configuredSpell)..")");
+            totemState[i].locallyVerified = false;
+            totemState[i].serverVerified  = false;
+            totemState[i].localVerifyTime = 0;
+            totemState[i].unitId = nil;
+            totemPositions[totem.element] = nil;
+        end
+
+        totemState[i].spell = configuredSpell;
+        totemState[i].buff  = configuredSpell and TOTEM_DEFINITIONS[configuredSpell] and TOTEM_DEFINITIONS[configuredSpell].buff;
     end
 
-    if not settings.FARMING_MODE then
-        if not HasBuff(settings.SHIELD_TYPE, 'player') then
-            CastSpellByName(settings.SHIELD_TYPE);
-            PrintMessage("Casting "..settings.SHIELD_TYPE..".");
-            lastTotemCastTime = currentTime;
-            return;
-        end
+    if settings.AUTO_SHIELD_MODE and not HasBuff(settings.SHIELD_TYPE, 'player') then
+        BPCast(settings.SHIELD_TYPE);
+        PrintMessage("Casting "..settings.SHIELD_TYPE..".");
+        lastTotemCastTime = currentTime;
+        return;
     end
 
     local cleansingTotemSpell = nil;
@@ -442,8 +480,7 @@ local function DropTotems()
     if cleansingTotemSpell and UnitAffectingCombat("player") then
         local otherTotemsActive = true;
         for i, totem in ipairs(totemState) do
-            if (totem.element == "fire" or totem.element == "water") and settings.FARMING_MODE then
-            elseif totem.element ~= "water" and not totem.serverVerified then
+            if totem.element ~= "water" and not totem.serverVerified then
                 otherTotemsActive = false; break;
             end
         end
@@ -464,9 +501,7 @@ local function DropTotems()
     local hadExpiredTotems = false;
     if superwowEnabled then
         for i, totem in ipairs(totemState) do
-            if (totem.element == "fire" or totem.element == "water") and settings.FARMING_MODE then
-                totemState[i].locallyVerified = true; totemState[i].serverVerified = true;
-            elseif totem.unitId then
+            if totem.unitId then
                 if not UnitExists(totem.unitId) then
                     PrintMessage(totem.element.." totem expired/destroyed");
                     totemState[i].serverVerified = false; totemState[i].locallyVerified = false;
@@ -481,7 +516,7 @@ local function DropTotems()
                     end
                 end
             elseif totem.locallyVerified and not totem.unitId then
-                PrintMessage(totem.element.." has no unitId - resetting");
+                PrintMessage(totem.element.." locallyVerified but no unitId - resetting");
                 totemState[i].serverVerified = false; totemState[i].locallyVerified = false;
                 totemPositions[totem.element] = nil;
                 hadExpiredTotems = true;
@@ -489,9 +524,7 @@ local function DropTotems()
         end
     else
         for i, totem in ipairs(totemState) do
-            if (totem.element == "fire" or totem.element == "water") and settings.FARMING_MODE then
-                totemState[i].locallyVerified = true; totemState[i].serverVerified = true;
-            elseif totem.locallyVerified and totem.serverVerified then
+            if totem.locallyVerified and totem.serverVerified then
                 if totem.buff and not HasBuff(totem.buff, 'player') then
                     PrintMessage(totem.buff.." has expired - resetting.");
                     totemState[i].locallyVerified = false; totemState[i].serverVerified = false;
@@ -513,12 +546,8 @@ local function DropTotems()
         if settings.STRATHOLME_MODE and totem.element == "water" and totem.spell == "Disease Cleansing Totem" then isCleansingTotem = true
         elseif settings.ZG_MODE and totem.element == "water" and totem.spell == "Poison Cleansing Totem" then isCleansingTotem = true end
 
-        if (totem.element == "fire" or totem.element == "water") and settings.FARMING_MODE then
-            if not totem.locallyVerified then
-                totemState[i].locallyVerified = true; totemState[i].serverVerified = true;
-            end
-        elseif isCleansingTotem then
-            CastSpellByName(totem.spell);
+        if isCleansingTotem then
+            BPCast(totem.spell);
             if BP_TotemBar_StartTimer then
                 local el = string.upper(string.sub(totem.element,1,1))..string.sub(totem.element,2);
                 BP_TotemBar_StartTimer(el, totem.spell);
@@ -532,7 +561,7 @@ local function DropTotems()
                 totemState[i].locallyVerified = true; totemState[i].serverVerified = true;
                 PrintMessage("Skipping "..totem.element.." totem (disabled)");
             else
-                CastSpellByName(totem.spell);
+                BPCast(totem.spell);
                 if BP_TotemBar_StartTimer then
                     local el = string.upper(string.sub(totem.element,1,1))..string.sub(totem.element,2);
                     BP_TotemBar_StartTimer(el, totem.spell);
@@ -559,8 +588,7 @@ local function DropTotems()
 
     if superwowEnabled then
         for i, totem in ipairs(totemState) do
-            if (totem.element == "fire" or totem.element == "water") and settings.FARMING_MODE then
-            elseif totem.locallyVerified and not totem.serverVerified then
+            if totem.locallyVerified and not totem.serverVerified then
                 if totem.unitId then
                     if UnitExists(totem.unitId) and UnitName(totem.unitId.."owner") == UnitName("player") then
                         PrintMessage(totem.element.." totem confirmed via SuperWoW")
@@ -590,8 +618,7 @@ local function DropTotems()
         end
     else
         for i, totem in ipairs(totemState) do
-            if (totem.element == "fire" or totem.element == "water") and settings.FARMING_MODE then
-            elseif totem.locallyVerified and not totem.serverVerified then
+            if totem.locallyVerified and not totem.serverVerified then
                 if totem.buff then
                     if HasBuff(totem.buff, 'player') then
                         PrintMessage(totem.buff.." confirmed active.");
@@ -629,7 +656,7 @@ local function DropTotems()
         end
     end
 
-    -- PHASE 4: recall
+    -- PHASE 4: all verified, nothing left to do
     if allServerVerified then
         PrintMessage("All totems are active.");
         if lastAllTotemsActiveTime == 0 then
@@ -638,23 +665,6 @@ local function DropTotems()
                 lastActiveMessageTime = currentTime;
                 DEFAULT_CHAT_FRAME:AddMessage("Totems: ACTIVE", 1, 0, 0);
             end
-            return;
-        end
-        if currentTime - lastAllTotemsActiveTime < TOTEM_RECALL_ACTIVATION_COOLDOWN then
-            PrintMessage("Totemic Recall activation cooldown.");
-            return;
-        end
-        if not UnitAffectingCombat("player") then
-            CastSpellByName("Totemic Recall");
-            if BP_TotemBar_StopAllTimers then BP_TotemBar_StopAllTimers() end
-            lastTotemRecallTime = GetTime();
-            lastAllTotemsActiveTime = 0;
-            lastTotemCastTime = currentTime;
-            PrintRecallMessage();
-            ResetTotemState();
-            PrintMessage("Casting Totemic Recall.");
-        else
-            PrintMessage("Cannot cast Totemic Recall while in combat.");
         end
     else
         lastAllTotemsActiveTime = 0;
@@ -746,11 +756,11 @@ local function HealPartyMembers()
             if followTarget and UnitExists(followTarget) and not UnitIsDeadOrGhost(followTarget) and UnitIsConnected(followTarget) then
                 if UnitName(followTarget.."target") then
                     AssistUnit(followTarget);
-                    CastSpellByName("Chain Lightning");
-                    CastSpellByName("Fire Nova Totem");
+                    BPCast("Chain Lightning");
+                    BPCast("Fire Nova Totem");
                     if BP_TotemBar_StartTimer then BP_TotemBar_StartTimer("Fire","Fire Nova Totem") end
                     lastFireNovaCastTime = GetTime();
-                    CastSpellByName("Lightning Bolt");
+                    BPCast("Lightning Bolt");
                 else
                     FollowUnit(followTarget)
                 end
@@ -771,22 +781,25 @@ local function SetEarthTotem(totemName, displayName)
             end
         end
         lastAllTotemsActiveTime=0;
-        DEFAULT_CHAT_FRAME:AddMessage("Backpacker: Earth totem disabled.");
+        PrintMessage("Earth totem disabled.");
         if BP_TotemBar_RefreshIcons then BP_TotemBar_RefreshIcons() end
     elseif TOTEM_DEFINITIONS[totemName] then
         settings.EARTH_TOTEM = totemName; BackpackerDB.EARTH_TOTEM = totemName;
         for i,totem in ipairs(totemState) do
             if totem.element=="earth" then
-                totemState[i].spell=totemName; totemState[i].locallyVerified=false;
-                totemState[i].serverVerified=false; totemState[i].localVerifyTime=0;
-                totemState[i].unitId=nil; totemPositions.earth=nil; break;
+                totemState[i].spell=totemName;
+                if totem.spell ~= totemName then
+                    totemState[i].locallyVerified=false; totemState[i].serverVerified=false;
+                    totemState[i].localVerifyTime=0; totemState[i].unitId=nil; totemPositions.earth=nil;
+                    lastAllTotemsActiveTime=0;
+                end
+                break;
             end
         end
-        lastAllTotemsActiveTime=0;
-        DEFAULT_CHAT_FRAME:AddMessage("Backpacker: Earth totem set to "..displayName..".");
+        PrintMessage("Earth totem set to "..displayName.."."); 
         if BP_TotemBar_RefreshIcons then BP_TotemBar_RefreshIcons() end
     else
-        DEFAULT_CHAT_FRAME:AddMessage("Backpacker: Unknown earth totem: "..totemName);
+        PrintMessage("Unknown earth totem: ");
     end
 end
 
@@ -801,22 +814,26 @@ local function SetFireTotem(totemName, displayName)
             end
         end
         lastAllTotemsActiveTime=0;
-        DEFAULT_CHAT_FRAME:AddMessage("Backpacker: Fire totem disabled.");
+        PrintMessage("Fire totem disabled.");
         if BP_TotemBar_RefreshIcons then BP_TotemBar_RefreshIcons() end
     elseif TOTEM_DEFINITIONS[totemName] then
         settings.FIRE_TOTEM = totemName; BackpackerDB.FIRE_TOTEM = totemName;
         for i,totem in ipairs(totemState) do
             if totem.element=="fire" then
-                totemState[i].spell=totemName; totemState[i].locallyVerified=false;
-                totemState[i].serverVerified=false; totemState[i].localVerifyTime=0;
-                totemState[i].unitId=nil; totemPositions.fire=nil; break;
+                totemState[i].spell=totemName;
+                if totem.spell ~= totemName then
+                    totemState[i].locallyVerified=false; totemState[i].serverVerified=false;
+                    totemState[i].localVerifyTime=0; totemState[i].unitId=nil; totemPositions.fire=nil;
+                    lastAllTotemsActiveTime=0;
+                end
+                break;
             end
         end
-        lastAllTotemsActiveTime=0;
-        DEFAULT_CHAT_FRAME:AddMessage("Backpacker: Fire totem set to "..displayName..".");
+        PrintMessage("Fire totem set to "..displayName.."."); 
         if BP_TotemBar_RefreshIcons then BP_TotemBar_RefreshIcons() end
+        if BP_TotemBar_RefreshFireSlider then BP_TotemBar_RefreshFireSlider() end
     else
-        DEFAULT_CHAT_FRAME:AddMessage("Backpacker: Unknown fire totem: "..totemName);
+        PrintMessage("Unknown fire totem: ");
     end
 end
 
@@ -831,22 +848,25 @@ local function SetAirTotem(totemName, displayName)
             end
         end
         lastAllTotemsActiveTime=0;
-        DEFAULT_CHAT_FRAME:AddMessage("Backpacker: Air totem disabled.");
+        PrintMessage("Air totem disabled.");
         if BP_TotemBar_RefreshIcons then BP_TotemBar_RefreshIcons() end
     elseif TOTEM_DEFINITIONS[totemName] then
         settings.AIR_TOTEM = totemName; BackpackerDB.AIR_TOTEM = totemName;
         for i,totem in ipairs(totemState) do
             if totem.element=="air" then
-                totemState[i].spell=totemName; totemState[i].locallyVerified=false;
-                totemState[i].serverVerified=false; totemState[i].localVerifyTime=0;
-                totemState[i].unitId=nil; totemPositions.air=nil; break;
+                totemState[i].spell=totemName;
+                if totem.spell ~= totemName then
+                    totemState[i].locallyVerified=false; totemState[i].serverVerified=false;
+                    totemState[i].localVerifyTime=0; totemState[i].unitId=nil; totemPositions.air=nil;
+                    lastAllTotemsActiveTime=0;
+                end
+                break;
             end
         end
-        lastAllTotemsActiveTime=0;
-        DEFAULT_CHAT_FRAME:AddMessage("Backpacker: Air totem set to "..displayName..".");
+        PrintMessage("Air totem set to "..displayName.."."); 
         if BP_TotemBar_RefreshIcons then BP_TotemBar_RefreshIcons() end
     else
-        DEFAULT_CHAT_FRAME:AddMessage("Backpacker: Unknown air totem: "..totemName);
+        PrintMessage("Unknown air totem: ");
     end
 end
 
@@ -861,42 +881,45 @@ local function SetWaterTotem(totemName, displayName)
             end
         end
         lastAllTotemsActiveTime=0;
-        DEFAULT_CHAT_FRAME:AddMessage("Backpacker: Water totem disabled.");
+        PrintMessage("Water totem disabled.");
         if BP_TotemBar_RefreshIcons then BP_TotemBar_RefreshIcons() end
     elseif TOTEM_DEFINITIONS[totemName] then
         settings.WATER_TOTEM = totemName; BackpackerDB.WATER_TOTEM = totemName;
         for i,totem in ipairs(totemState) do
             if totem.element=="water" then
-                totemState[i].spell=totemName; totemState[i].locallyVerified=false;
-                totemState[i].serverVerified=false; totemState[i].localVerifyTime=0;
-                totemState[i].unitId=nil; totemPositions.water=nil; break;
+                totemState[i].spell=totemName;
+                if totem.spell ~= totemName then
+                    totemState[i].locallyVerified=false; totemState[i].serverVerified=false;
+                    totemState[i].localVerifyTime=0; totemState[i].unitId=nil; totemPositions.water=nil;
+                    lastAllTotemsActiveTime=0;
+                end
+                break;
             end
         end
-        lastAllTotemsActiveTime=0;
-        DEFAULT_CHAT_FRAME:AddMessage("Backpacker: Water totem set to "..displayName..".");
+        PrintMessage("Water totem set to "..displayName.."."); 
         if BP_TotemBar_RefreshIcons then BP_TotemBar_RefreshIcons() end
     else
-        DEFAULT_CHAT_FRAME:AddMessage("Backpacker: Unknown water totem: "..totemName);
+        PrintMessage("Unknown water totem: ");
     end
 end
 
 -- MODE TOGGLES
-local function ToggleStratholmeMode()
+local function ToggleAntiDiseaseMode()
     if settings.ZG_MODE then
         settings.ZG_MODE=false; BackpackerDB.ZG_MODE=false;
-        DEFAULT_CHAT_FRAME:AddMessage("Backpacker: Zul'Gurub mode disabled.");
+        PrintMessage("Anti-Poison mode disabled.");
     end
-    ToggleSetting("STRATHOLME_MODE","Stratholme mode");
+    ToggleSetting("STRATHOLME_MODE","Anti-Disease mode");
     ResetWaterTotemState();
     if BP_TotemBar_UpdateMode then BP_TotemBar_UpdateMode() end
 end
 
-local function ToggleZulGurubMode()
+local function ToggleAntiPoisonMode()
     if settings.STRATHOLME_MODE then
         settings.STRATHOLME_MODE=false; BackpackerDB.STRATHOLME_MODE=false;
-        DEFAULT_CHAT_FRAME:AddMessage("Backpacker: Stratholme mode disabled.");
+        PrintMessage("Anti-Disease mode disabled.");
     end
-    ToggleSetting("ZG_MODE","Zul'Gurub mode");
+    ToggleSetting("ZG_MODE","Anti-Poison mode");
     ResetWaterTotemState();
     if BP_TotemBar_UpdateMode then BP_TotemBar_UpdateMode() end
 end
@@ -905,10 +928,10 @@ local function ToggleHybridMode()
     ToggleSetting("HYBRID_MODE","Hybrid mode");
     if settings.HYBRID_MODE then
         settings.HEALTH_THRESHOLD=80; BackpackerDB.HEALTH_THRESHOLD=80;
-        DEFAULT_CHAT_FRAME:AddMessage("Backpacker: Healing threshold set to 80% for hybrid mode.");
+        PrintMessage("Healing threshold set to 80% for hybrid mode.");
     else
         settings.HEALTH_THRESHOLD=90; BackpackerDB.HEALTH_THRESHOLD=90;
-        DEFAULT_CHAT_FRAME:AddMessage("Backpacker: Healing threshold reset to 90%.");
+        PrintMessage("Healing threshold reset to 90%.");
     end
 end
 
@@ -916,44 +939,25 @@ local function SetTotemCastDelay(delay)
     delay = tonumber(delay);
     if delay and delay >= 0 then
         TOTEM_CAST_DELAY = delay;
-        DEFAULT_CHAT_FRAME:AddMessage("Backpacker: Totem cast delay set to "..delay.." seconds.");
+        PrintMessage("Totem cast delay set to "..delay.." seconds."); 
     else
-        DEFAULT_CHAT_FRAME:AddMessage("Backpacker: Invalid delay.");
+        PrintMessage("Invalid delay.");
     end
-end
-
-local function ManualTotemicRecall()
-    local currentTime = GetTime();
-    if currentTime - lastTotemRecallTime < TOTEM_RECALL_COOLDOWN then return end
-    CastSpellByName("Totemic Recall");
-    if BP_TotemBar_StopAllTimers then BP_TotemBar_StopAllTimers() end
-    lastAllTotemsActiveTime=0; lastTotemCastTime=currentTime;
-    PrintRecallMessage();
-    ResetTotemState();
 end
 
 local function TogglePetHealing()    ToggleSetting("PET_HEALING_ENABLED","Pet healing mode") end
 local function ToggleAutoShieldMode()
-    ToggleSetting("AUTO_SHIELD_MODE","Shield auto-refresh mode");
-    if settings.AUTO_SHIELD_MODE then
-        DEFAULT_CHAT_FRAME:AddMessage("Backpacker: Auto-refresh enabled for "..settings.SHIELD_TYPE..".");
-    end
+    ToggleSetting("AUTO_SHIELD_MODE","Auto Shield Cast");
 end
 
 local function SetWaterShield()
-    if settings.FARMING_MODE then PrintShieldSetMessage("Cannot change shield while farming mode is active."); return end
     settings.SHIELD_TYPE="Water Shield"; BackpackerDB.SHIELD_TYPE="Water Shield";
-    PrintShieldSetMessage("Shield type set to Water Shield.");
 end
 local function SetLightningShield()
-    if settings.FARMING_MODE then PrintShieldSetMessage("Cannot change shield while farming mode is active."); return end
     settings.SHIELD_TYPE="Lightning Shield"; BackpackerDB.SHIELD_TYPE="Lightning Shield";
-    PrintShieldSetMessage("Shield type set to Lightning Shield.");
 end
 local function SetEarthShield()
-    if settings.FARMING_MODE then PrintShieldSetMessage("Cannot change shield while farming mode is active."); return end
     settings.SHIELD_TYPE="Earth Shield"; BackpackerDB.SHIELD_TYPE="Earth Shield";
-    PrintShieldSetMessage("Shield type set to Earth Shield.");
 end
 
 local function ReportTotemsToParty()
@@ -972,15 +976,6 @@ local function ReportTotemsToParty()
     local msg = "Current Totems: "..table.concat(list,", ")
     SendChatMessage(msg,"PARTY")
     DEFAULT_CHAT_FRAME:AddMessage("Backpacker: "..msg)
-end
-
-local function ToggleFarmingMode()
-    ToggleSetting("FARMING_MODE","Farming mode");
-    if settings.FARMING_MODE and settings.AUTO_SHIELD_MODE then
-        settings.AUTO_SHIELD_MODE=false; BackpackerDB.AUTO_SHIELD_MODE=false;
-        DEFAULT_CHAT_FRAME:AddMessage("Backpacker: Auto-refresh disabled for farming mode.");
-    end
-    ResetTotemState();
 end
 
 -- DEBUG SLASH COMMANDS
@@ -1027,79 +1022,6 @@ SlashCmdList["BPCHECKBUFFS"]=function()
     end
 end
 
--- MANUAL CAST COMMANDS
-local function ManualCastEarth(spell)
-    CastSpellByName(spell)
-    if BP_TotemBar_StartTimer then BP_TotemBar_StartTimer("Earth",spell) end
-    for i,totem in ipairs(totemState) do
-        if totem.element=="earth" then
-            totemState[i].locallyVerified=true; totemState[i].localVerifyTime=GetTime();
-            totemState[i].serverVerified=false; totemState[i].unitId=nil; totemPositions.earth=nil; break
-        end
-    end
-    DEFAULT_CHAT_FRAME:AddMessage("Backpacker: Manual "..spell.." cast",1,1,0)
-end
-local function ManualCastFire(spell)
-    CastSpellByName(spell)
-    if BP_TotemBar_StartTimer then BP_TotemBar_StartTimer("Fire",spell) end
-    if spell=="Fire Nova Totem" then lastFireNovaCastTime=GetTime() end
-    for i,totem in ipairs(totemState) do
-        if totem.element=="fire" then
-            totemState[i].locallyVerified=true; totemState[i].localVerifyTime=GetTime();
-            totemState[i].serverVerified=false; totemState[i].unitId=nil; totemPositions.fire=nil; break
-        end
-    end
-    DEFAULT_CHAT_FRAME:AddMessage("Backpacker: Manual "..spell.." cast",1,1,0)
-end
-local function ManualCastAir(spell)
-    CastSpellByName(spell)
-    if BP_TotemBar_StartTimer then BP_TotemBar_StartTimer("Air",spell) end
-    for i,totem in ipairs(totemState) do
-        if totem.element=="air" then
-            totemState[i].locallyVerified=true; totemState[i].localVerifyTime=GetTime();
-            totemState[i].serverVerified=false; totemState[i].unitId=nil; totemPositions.air=nil; break
-        end
-    end
-    DEFAULT_CHAT_FRAME:AddMessage("Backpacker: Manual "..spell.." cast",1,1,0)
-end
-local function ManualCastWater(spell)
-    CastSpellByName(spell)
-    if BP_TotemBar_StartTimer then BP_TotemBar_StartTimer("Water",spell) end
-    for i,totem in ipairs(totemState) do
-        if totem.element=="water" then
-            totemState[i].locallyVerified=true; totemState[i].localVerifyTime=GetTime();
-            totemState[i].serverVerified=false; totemState[i].unitId=nil; totemPositions.water=nil; break
-        end
-    end
-    DEFAULT_CHAT_FRAME:AddMessage("Backpacker: Manual "..spell.." cast",1,1,0)
-end
-
-SLASH_BPSOECAST1="/bpsoe-cast";     SlashCmdList["BPSOECAST"]=function() ManualCastEarth("Strength of Earth Totem") end
-SLASH_BPSSCAST1="/bpss-cast";       SlashCmdList["BPSSCAST"]=function() ManualCastEarth("Stoneskin Totem") end
-SLASH_BPTREMORCAST1="/bptremor-cast"; SlashCmdList["BPTREMORCAST"]=function() ManualCastEarth("Tremor Totem") end
-SLASH_BPSTONECLAWCAST1="/bpstoneclaw-cast"; SlashCmdList["BPSTONECLAWCAST"]=function() ManualCastEarth("Stoneclaw Totem") end
-SLASH_BPEARTHBINDCAST1="/bpearthbind-cast"; SlashCmdList["BPEARTHBINDCAST"]=function() ManualCastEarth("Earthbind Totem") end
-
-SLASH_BPFTCAST1="/bpft-cast";       SlashCmdList["BPFTCAST"]=function() ManualCastFire("Flametongue Totem") end
-SLASH_BPFRRCAST1="/bpfrr-cast";     SlashCmdList["BPFRRCAST"]=function() ManualCastFire("Frost Resistance Totem") end
-SLASH_BPFIRENOVACAST1="/bpfirenova-cast"; SlashCmdList["BPFIRENOVACAST"]=function() ManualCastFire("Fire Nova Totem") end
-SLASH_BPSEARINGCAST1="/bpsearing-cast"; SlashCmdList["BPSEARINGCAST"]=function() ManualCastFire("Searing Totem") end
-SLASH_BPMAGMACAST1="/bpmagma-cast"; SlashCmdList["BPMAGMACAST"]=function() ManualCastFire("Magma Totem") end
-
-SLASH_BPWFCAST1="/bpwf-cast";       SlashCmdList["BPWFCAST"]=function() ManualCastAir("Windfury Totem") end
-SLASH_BPGOACAST1="/bpgoa-cast";     SlashCmdList["BPGOACAST"]=function() ManualCastAir("Grace of Air Totem") end
-SLASH_BPNRCAST1="/bpnr-cast";       SlashCmdList["BPNRCAST"]=function() ManualCastAir("Nature Resistance Totem") end
-SLASH_BPGROUNDINGCAST1="/bpgrounding-cast"; SlashCmdList["BPGROUNDINGCAST"]=function() ManualCastAir("Grounding Totem") end
-SLASH_BPSENTRYCAST1="/bpsentry-cast"; SlashCmdList["BPSENTRYCAST"]=function() ManualCastAir("Sentry Totem") end
-SLASH_BPWINDWALLCAST1="/bpwindwall-cast"; SlashCmdList["BPWINDWALLCAST"]=function() ManualCastAir("Windwall Totem") end
-SLASH_BPTRANQUILCAST1="/bptranquil-cast"; SlashCmdList["BPTRANQUILCAST"]=function() ManualCastAir("Tranquil Air Totem") end
-
-SLASH_BPMSCAST1="/bpms-cast";       SlashCmdList["BPMSCAST"]=function() ManualCastWater("Mana Spring Totem") end
-SLASH_BPHSCAST1="/bphs-cast";       SlashCmdList["BPHSCAST"]=function() ManualCastWater("Healing Stream Totem") end
-SLASH_BPFRCAST1="/bpfr-cast";       SlashCmdList["BPFRCAST"]=function() ManualCastWater("Fire Resistance Totem") end
-SLASH_BPPOISONCAST1="/bppoison-cast"; SlashCmdList["BPPOISONCAST"]=function() ManualCastWater("Poison Cleansing Totem") end
-SLASH_BPDISEASECAST1="/bpdisease-cast"; SlashCmdList["BPDISEASECAST"]=function() ManualCastWater("Disease Cleansing Totem") end
-
 -- Public API
 Backpacker = Backpacker or {};
 Backpacker.API = {
@@ -1116,27 +1038,22 @@ Backpacker.API = {
 
 local function PrintUsage()
     DEFAULT_CHAT_FRAME:AddMessage("Backpacker commands:");
-    DEFAULT_CHAT_FRAME:AddMessage("  /bpheal /bpbuff /bpfirebuff /bprecall /bpdebug");
+    DEFAULT_CHAT_FRAME:AddMessage("  /bpheal /bpbuff /bpfirebuff /bpdebug");
     DEFAULT_CHAT_FRAME:AddMessage("  /bpf (follow) /bpl (set follow target) /bpchainheal");
-    DEFAULT_CHAT_FRAME:AddMessage("  /bpstrath /bpzg /bphybrid /bpdelay /bppets /bpauto");
+    DEFAULT_CHAT_FRAME:AddMessage("  /bpantidisease /bpantipoison /bphybrid /bpdelay /bppets /bpauto");
     DEFAULT_CHAT_FRAME:AddMessage("  /bpws /bpls /bpes (shield type)");
-    DEFAULT_CHAT_FRAME:AddMessage("  /bpfarm /bpreport /bpmenu");
+    DEFAULT_CHAT_FRAME:AddMessage("  /bpreport /bpmenu");
     DEFAULT_CHAT_FRAME:AddMessage("  EARTH: /bpsoe /bpss /bptremor /bpstoneclaw /bpearthbind");
     DEFAULT_CHAT_FRAME:AddMessage("  FIRE:  /bpft /bpfrr /bpfirenova /bpsearing /bpmagma");
     DEFAULT_CHAT_FRAME:AddMessage("  AIR:   /bpwf /bpgoa /bpnr /bpgrounding /bpsentry /bpwindwall /bptranquil");
     DEFAULT_CHAT_FRAME:AddMessage("  WATER: /bpms /bphs /bpfr /bppoison /bpdisease");
-    DEFAULT_CHAT_FRAME:AddMessage("  Add -cast suffix for manual cast variants");
 end
 
 SLASH_BPHEAL1="/bpheal"; SlashCmdList["BPHEAL"]=HealPartyMembers;
 
 local function DropFireTotem()
     local currentTime = GetTime();
-    if currentTime - lastTotemRecallTime < TOTEM_RECALL_COOLDOWN then
-        DEFAULT_CHAT_FRAME:AddMessage("Backpacker: Totems on cooldown after recall."); return
-    end
     if currentTime - lastTotemCastTime < TOTEM_CAST_DELAY then return end
-    if settings.FARMING_MODE then DEFAULT_CHAT_FRAME:AddMessage("Backpacker: Fire totem suppressed in farming mode."); return end
     local fireSpell = settings.FIRE_TOTEM;
     if not fireSpell or fireSpell=="" then DEFAULT_CHAT_FRAME:AddMessage("Backpacker: No fire totem configured."); return end
     if currentTime - lastFireNovaCastTime < FIRE_NOVA_DURATION then return end
@@ -1172,7 +1089,7 @@ local function DropFireTotem()
     end
     if fireActive then return end
 
-    CastSpellByName(fireSpell);
+    BPCast(fireSpell);
     if BP_TotemBar_StartTimer then BP_TotemBar_StartTimer("Fire",fireSpell) end
     for i,totem in ipairs(totemState) do
         if totem.element=="fire" then
@@ -1189,11 +1106,10 @@ SLASH_BPFIREBUFF1="/bpfirebuff";   SlashCmdList["BPFIREBUFF"]=DropFireTotem;
 SLASH_BPDEBUG1="/bpdebug";         SlashCmdList["BPDEBUG"]=function() ToggleSetting("DEBUG_MODE","Debug mode") end
 SLASH_BPF1="/bpf";                 SlashCmdList["BPF"]=function() ToggleSetting("FOLLOW_ENABLED","Follow functionality") end
 SLASH_BPCHAINHEAL1="/bpchainheal"; SlashCmdList["BPCHAINHEAL"]=function() ToggleSetting("CHAIN_HEAL_ENABLED","Chain Heal functionality") end
-SLASH_BPSTRATH1="/bpstrath";       SlashCmdList["BPSTRATH"]=ToggleStratholmeMode;
-SLASH_BPZG1="/bpzg";               SlashCmdList["BPZG"]=ToggleZulGurubMode;
+SLASH_BPANTIDISEASE1="/bpantidisease"; SlashCmdList["BPANTIDISEASE"]=ToggleAntiDiseaseMode;
+SLASH_BPANTIPOISON1="/bpantipoison";   SlashCmdList["BPANTIPOISON"]=ToggleAntiPoisonMode;
 SLASH_BPHYBRID1="/bphybrid";       SlashCmdList["BPHYBRID"]=ToggleHybridMode;
 SLASH_BPDELAY1="/bpdelay";         SlashCmdList["BPDELAY"]=SetTotemCastDelay;
-SLASH_BPRECALL1="/bprecall";       SlashCmdList["BPRECALL"]=ManualTotemicRecall;
 SLASH_BPPETS1="/bppets";           SlashCmdList["BPPETS"]=TogglePetHealing;
 SLASH_BPAUTO1="/bpauto";           SlashCmdList["BPAUTO"]=ToggleAutoShieldMode;
 
@@ -1201,9 +1117,9 @@ SLASH_BPL1="/bpl";
 SlashCmdList["BPL"]=function()
     if UnitExists("target") and UnitIsPlayer("target") then
         local n=UnitName("target"); settings.FOLLOW_TARGET_NAME=n; BackpackerDB.FOLLOW_TARGET_NAME=n;
-        DEFAULT_CHAT_FRAME:AddMessage("Backpacker: Follow target set to "..n..".");
+        PrintMessage("Follow target set to ");
     else
-        DEFAULT_CHAT_FRAME:AddMessage("Backpacker: No valid player target selected.");
+        PrintMessage("No valid player target selected.");
     end
 end
 
@@ -1237,9 +1153,58 @@ SLASH_BPFR1="/bpfr";         SlashCmdList["BPFR"]=function() SetWaterTotem("Fire
 SLASH_BPPOISON1="/bppoison"; SlashCmdList["BPPOISON"]=function() SetWaterTotem("Poison Cleansing Totem","Poison Cleansing") end
 SLASH_BPDISEASE1="/bpdisease"; SlashCmdList["BPDISEASE"]=function() SetWaterTotem("Disease Cleansing Totem","Disease Cleansing") end
 
-SLASH_BPFARM1="/bpfarm";     SlashCmdList["BPFARM"]=ToggleFarmingMode;
 SLASH_BP1="/bp"; SLASH_BP2="/backpacker"; SlashCmdList["BP"]=PrintUsage;
 SLASH_BPREPORT1="/bpreport"; SlashCmdList["BPREPORT"]=ReportTotemsToParty;
+
+OnExternalTotemCast = function(spellName)
+    local def = TOTEM_DEFINITIONS[spellName];
+    if not def then return end
+    local currentTime = GetTime();
+    for i, totem in ipairs(totemState) do
+        if totem.element == def.element then
+            -- If already server-verified with the same spell, this is likely a spam
+            -- attempt -- ignore it. A genuine cast would destroy the old totem first
+            -- and SuperWoW will reset serverVerified via UnitExists checks.
+            -- But if it's a different spell, allow it through as a genuine replacement.
+            if totem.serverVerified and totem.spell == spellName then
+                if settings.DEBUG_MODE then
+                    PrintMessage("External totem spam ignored - ");
+                end
+                return;
+            end
+            totemState[i].spell = spellName;
+            totemState[i].buff  = def.buff;
+            totemState[i].locallyVerified = true;
+            totemState[i].localVerifyTime = currentTime;
+            totemState[i].serverVerified  = false;
+            totemState[i].unitId = nil;
+            totemPositions[def.element] = nil;
+            break;
+        end
+    end
+    lastTotemCastTime = currentTime;
+    lastAllTotemsActiveTime = 0;
+    -- Do NOT start the bar timer or refresh icons here -- wait for SuperWoW
+    -- GUID confirmation in UNIT_MODEL_CHANGED so we only update on a real cast.
+    if settings.DEBUG_MODE then
+        DEFAULT_CHAT_FRAME:AddMessage("Backpacker: External totem pending SuperWoW: "..spellName, 1, 1, 0);
+    end
+end
+
+OnExternalTotemicRecall = function()
+    local now = GetTime();
+    if now - lastTotemRecallTime < 6 then
+        if settings.DEBUG_MODE then
+            DEFAULT_CHAT_FRAME:AddMessage("Backpacker: Ignoring Totemic Recall - still on cooldown", 1, 0.3, 0.3);
+        end
+        return;
+    end
+    lastTotemRecallTime = now;
+    lastAllTotemsActiveTime = 0;
+    ResetTotemState();
+    if BP_TotemBar_StopAllTimers then BP_TotemBar_StopAllTimers() end
+    DEFAULT_CHAT_FRAME:AddMessage("Totems: RECALLED", 0, 1, 0);
+end
 
 local function OnEvent(event, arg1)
     if event=="ADDON_LOADED" and arg1=="Backpacker" then
@@ -1255,7 +1220,9 @@ local function OnEvent(event, arg1)
         DEFAULT_CHAT_FRAME:AddMessage("Backpacker: Loaded.");
     end
 end
-local f=CreateFrame("Frame"); f:RegisterEvent("ADDON_LOADED"); f:SetScript("OnEvent",OnEvent);
+local f=CreateFrame("Frame");
+f:RegisterEvent("ADDON_LOADED");
+f:SetScript("OnEvent",OnEvent);
 PrintUsage();
 
 -- =============================================================
@@ -1395,15 +1362,18 @@ do
     local fadeControls = {};
     local barHovered   = false;
     local FADE_SPEED   = 4.0; -- alpha units per second
+    local shieldFlyout; -- forward declaration, assigned below
+    local flyoutDismiss; -- forward declaration, assigned below
 
     local fadeFrame = CreateFrame("Frame");
     fadeFrame:SetScript("OnUpdate", function()
         local dt = arg1;
+        local shouldShow = barHovered or shieldFlyout:IsShown();
         for i = 1, table.getn(fadeControls) do
             local ctrl = fadeControls[i];
             if ctrl and ctrl.GetAlpha then
                 local cur = ctrl:GetAlpha();
-                if barHovered then
+                if shouldShow then
                     local next = cur + FADE_SPEED * dt;
                     if next >= 1 then next = 1 end
                     ctrl:SetAlpha(next);
@@ -1547,7 +1517,7 @@ do
         aTimer:SetPoint("CENTER",activeBtn,"CENTER",0,0); aTimer:SetTextColor(1,1,1,1); aTimer:Hide();
         local aTimerLayers={};
         activeBtn:SetScript("OnClick",function()
-            local ts=timerState[elementKey]; if ts and ts.totemName then CastSpellByName(ts.totemName); BP_TotemBar_StartTimer(elementKey,ts.totemName) end
+            local ts=timerState[elementKey]; if ts and ts.totemName then BPCast(ts.totemName); BP_TotemBar_StartTimer(elementKey,ts.totemName) end
         end);
         activeBtn:SetScript("OnEnter",function() local ts=timerState[elementKey]; if ts and ts.totemName then ShowSpellTip(activeBtn,ts.totemName) end end);
         activeBtn:SetScript("OnLeave",function() tt:Hide() end);
@@ -1691,7 +1661,7 @@ do
                 end
             else
                 local cur=GetCurrentTotem(dbKey);
-                if cur then CastSpellByName(cur); BP_TotemBar_StartTimer(elementKey,cur)
+                if cur then BPCast(cur); BP_TotemBar_StartTimer(elementKey,cur)
                 else DEFAULT_CHAT_FRAME:AddMessage("Backpacker: No "..elementKey.." totem selected.") end
             end
         end);
@@ -1752,22 +1722,22 @@ do
     -- TOGGLE BUTTONS
     -- --------------------------------------------------------
     local toggleDefs={
-        { key="ZG", label="Z", tip="Zul'Gurub mode",  setting="ZG_MODE",
+        { key="SR", label="*", tip=function() return settings.STRICT_MODE and "Manual totem drops will be replaced" or "Manual totem drops preserved" end, setting="STRICT_MODE",
+          onToggle=function() ToggleSetting("STRICT_MODE","Strict mode") end },
+        { key="ZG", label="P", tip="Spams Poison Cleansing", setting="ZG_MODE",
           onToggle=function()
               if settings.STRATHOLME_MODE then settings.STRATHOLME_MODE=false; BackpackerDB.STRATHOLME_MODE=false end
-              ToggleSetting("ZG_MODE","Zul'Gurub mode"); ResetWaterTotemState();
+              ToggleSetting("ZG_MODE","Anti-Poison mode"); ResetWaterTotemState();
               if BP_TotemBar_UpdateMode then BP_TotemBar_UpdateMode() end
           end },
-        { key="ST", label="S", tip="Stratholme mode", setting="STRATHOLME_MODE",
+        { key="SM", label="D", tip="Spams Disease Cleansing", setting="STRATHOLME_MODE",
           onToggle=function()
               if settings.ZG_MODE then settings.ZG_MODE=false; BackpackerDB.ZG_MODE=false end
-              ToggleSetting("STRATHOLME_MODE","Stratholme mode"); ResetWaterTotemState();
+              ToggleSetting("STRATHOLME_MODE","Anti-Disease mode"); ResetWaterTotemState();
               if BP_TotemBar_UpdateMode then BP_TotemBar_UpdateMode() end
           end },
-        { key="CH", label="C", tip="Chain Heal",      setting="CHAIN_HEAL_ENABLED",
-          onToggle=function() ToggleSetting("CHAIN_HEAL_ENABLED","Chain Heal") end },
-        { key="FL", label="F", tip="Follow mode",     setting="FOLLOW_ENABLED",
-          onToggle=function() ToggleSetting("FOLLOW_ENABLED","Follow functionality") end },
+        { key="AS", label="S", tip="Automatic shield cast",     setting="AUTO_SHIELD_MODE",
+          onToggle=function() end },
     };
 
     local toggleButtons={};
@@ -1792,14 +1762,94 @@ do
         lbl:SetAllPoints(btn); lbl:SetJustifyH("CENTER"); lbl:SetJustifyV("MIDDLE");
         lbl:SetTextColor(0.75,0.75,0.75,1); lbl:SetText(def.label);
         local hi=btn:CreateTexture(nil,"HIGHLIGHT"); hi:SetTexture(1,1,1,0.15); hi:SetAllPoints(btn); btn:SetHighlightTexture(hi);
-        btn:SetScript("OnClick",function() def.onToggle(); RefreshToggleColors() end);
-        btn:SetScript("OnEnter",function() barHovered = true; tt:ClearLines(); tt:SetOwner(btn,"ANCHOR_RIGHT"); tt:AddLine(def.tip,1,1,1); tt:Show() end);
+        btn:SetScript("OnClick",function()
+            def.onToggle();
+            RefreshToggleColors();
+            if tt:IsShown() then tt:ClearLines(); tt:AddLine(type(def.tip)=="function" and def.tip() or def.tip,1,1,1); tt:Show() end
+        end);
+        btn:SetScript("OnEnter",function() barHovered = true; tt:ClearLines(); tt:SetOwner(btn,"ANCHOR_RIGHT"); tt:AddLine(type(def.tip)=="function" and def.tip() or def.tip,1,1,1); tt:Show() end);
         btn:SetScript("OnLeave",function() barHovered = false; tt:Hide() end);
         btn:SetAlpha(0);
         fadeControls[table.getn(fadeControls)+1] = btn;
         toggleButtons[def.key]=btn;
     end
     RefreshToggleColors();
+
+    -- --------------------------------------------------------
+    -- SHIELD FLYOUT (anchored above the AS button)
+    -- --------------------------------------------------------
+    shieldFlyout = CreateFrame("Frame", nil, bar);
+    shieldFlyout:SetFrameStrata("DIALOG");
+    shieldFlyout:Hide();
+
+    local SHIELD_OPTS = {
+        { label="W", tip="Water Shield",     fn=SetWaterShield     },
+        { label="L", tip="Lightning Shield", fn=SetLightningShield },
+        { label="E", tip="Earth Shield",     fn=SetEarthShield     },
+    };
+    local FLY_BTN_SIZE = TOGGLE_BTN_SIZE;
+    shieldFlyout:SetWidth(FLY_BTN_SIZE);
+    shieldFlyout:SetHeight(FLY_BTN_SIZE * table.getn(SHIELD_OPTS));
+    shieldFlyout:SetPoint("BOTTOMLEFT", toggleButtons["AS"], "TOPLEFT", 0, 2);
+    shieldFlyout:EnableMouse(true);
+    shieldFlyout:SetScript("OnEnter", function() barHovered = true end);
+    shieldFlyout:SetScript("OnLeave", function() barHovered = false end);
+
+    local flyBg = shieldFlyout:CreateTexture(nil,"BACKGROUND");
+    flyBg:SetAllPoints(shieldFlyout); flyBg:SetTexture(0.08,0.08,0.08,0.92);
+
+    for j = 1, table.getn(SHIELD_OPTS) do
+        local opt = SHIELD_OPTS[j];
+        local fb = CreateFrame("Button", nil, shieldFlyout);
+        fb:SetWidth(FLY_BTN_SIZE); fb:SetHeight(FLY_BTN_SIZE);
+        fb:SetPoint("BOTTOMLEFT", shieldFlyout, "BOTTOMLEFT", 0, (j-1)*FLY_BTN_SIZE);
+        local fbg = fb:CreateTexture(nil,"BACKGROUND"); fbg:SetAllPoints(fb);
+        fbg:SetTexture(0.12,0.12,0.12,0.85);
+        local fhi = fb:CreateTexture(nil,"HIGHLIGHT"); fhi:SetTexture(1,1,1,0.15); fhi:SetAllPoints(fb); fb:SetHighlightTexture(fhi);
+        local flbl = fb:CreateFontString(nil,"OVERLAY"); flbl:SetFont("Fonts\\FRIZQT__.TTF",8,"OUTLINE");
+        flbl:SetAllPoints(fb); flbl:SetJustifyH("CENTER"); flbl:SetJustifyV("MIDDLE");
+        flbl:SetTextColor(0.75,0.75,0.75,1); flbl:SetText(opt.label);
+        fb:SetScript("OnClick", function()
+            opt.fn();
+            settings.AUTO_SHIELD_MODE = true; BackpackerDB.AUTO_SHIELD_MODE = true;
+            barHovered = true;
+            shieldFlyout:Hide();
+            flyoutDismiss:Hide();
+            RefreshToggleColors();
+        end);
+        fb:SetScript("OnEnter", function()
+            barHovered = true;
+            tt:ClearLines(); tt:SetOwner(fb,"ANCHOR_RIGHT"); tt:AddLine(opt.tip,1,1,1); tt:Show();
+        end);
+        fb:SetScript("OnLeave", function() barHovered = false; tt:Hide() end);
+        -- Don't add to fadeControls -- flyout should stay fully opaque when visible
+    end
+
+    -- Dismiss flyout when clicking outside it
+    flyoutDismiss = CreateFrame("Frame", nil, UIParent);
+    flyoutDismiss:SetAllPoints(UIParent);
+    flyoutDismiss:SetFrameStrata("HIGH");
+    flyoutDismiss:EnableMouse(true);
+    flyoutDismiss:Hide();
+    flyoutDismiss:SetScript("OnMouseDown", function()
+        shieldFlyout:Hide();
+        flyoutDismiss:Hide();
+    end);
+
+    -- Wire AS button to show flyout on enable, hide on disable
+    local asBtn = toggleButtons["AS"];
+    asBtn:SetScript("OnClick", function()
+        ToggleAutoShieldMode();
+        RefreshToggleColors();
+        if settings.AUTO_SHIELD_MODE then
+            barHovered = true;
+            shieldFlyout:Show();
+            flyoutDismiss:Show();
+        else
+            shieldFlyout:Hide();
+            flyoutDismiss:Hide();
+        end
+    end);
 
     -- --------------------------------------------------------
     -- GLOBAL RANGE SLIDER
